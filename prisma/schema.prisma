@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  email        String   @unique
+  passwordHash String
+  name         String
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model Booking {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userName  String
+  userEmail String
+  date      String
+  time      String
+  court     String
+  equipment String[] @default([])
+  players   String[] @default([])
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  @@index([userEmail])
+  @@index([status])
+}
+
+model Message {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  text      String
+  sender    String
+  userEmail String
+  createdAt DateTime @default(now())
+
+  @@index([userEmail])
+}
+
+model GymClosure {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  date      String
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
+model WeeklyEvent {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  dayOfWeek Int
+  time      String
+  court     String
+  title     String
+  createdAt DateTime @default(now())
+
+  @@index([dayOfWeek])
+}

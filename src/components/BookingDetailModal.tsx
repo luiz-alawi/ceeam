@@ -3,7 +3,7 @@
 import {
   X, MapPin, Calendar, Clock, Users, Package,
   CheckCircle, XCircle, AlertCircle, Trash2,
-  MessageSquare, User, Mail, CalendarDays,
+  MessageSquare, User, Mail, CalendarDays, RotateCcw,
 } from 'lucide-react';
 import { formatDatePtBR, formatDateTimePtBR } from '@/utils/dateUtils';
 
@@ -30,6 +30,7 @@ interface BookingDetailModalProps {
   onAccept?: () => void;
   onReject?: () => void;
   onAdminCancel?: () => void;
+  onRestore?: () => void;   // re-accept rejected/cancelled
   onChat?: () => void;
 }
 
@@ -67,10 +68,11 @@ export default function BookingDetailModal({
   onAccept,
   onReject,
   onAdminCancel,
+  onRestore,
   onChat,
 }: BookingDetailModalProps) {
   const cfg = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending;
-  const isAdmin = !!(booking.userName || onAccept || onReject || onAdminCancel || onChat);
+  const isAdmin = !!(booking.userName || onAccept || onReject || onAdminCancel || onRestore || onChat);
 
   const formattedDate = formatDatePtBR(booking.date, {
     weekday: 'long',
@@ -218,6 +220,16 @@ export default function BookingDetailModal({
                 className="w-full flex items-center justify-center gap-1.5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
               >
                 <MessageSquare className="w-4 h-4" /> Chat com usuário
+              </button>
+            )}
+
+            {/* Admin: restore from history */}
+            {onRestore && (booking.status === 'rejected' || booking.status === 'cancelled') && (
+              <button
+                onClick={onRestore}
+                className="w-full flex items-center justify-center gap-1.5 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" /> Aceitar pedido
               </button>
             )}
 

@@ -36,6 +36,16 @@ type AllowedStatus = (typeof ALLOWED_STATUSES)[number];
 export async function updateRequestStatus(id: string, status: AllowedStatus): Promise<Request> {
   await requireAdmin();
 
+  if (status === 'accepted') {
+    const target = await prisma.booking.findUnique({ where: { id } });
+    if (target) {
+      const conflict = await prisma.booking.findFirst({
+        where: { date: target.date, time: target.time, court: target.court, status: 'accepted', NOT: { id } },
+      });
+      if (conflict) throw new Error('Já existe um agendamento aceito neste horário e quadra.');
+    }
+  }
+
   const row = await prisma.booking.update({
     where: { id },
     data: { status },

@@ -90,11 +90,14 @@ export default function AdminPage() {
   };
 
   const updateStatus = async (id: string, status: 'accepted' | 'rejected' | 'cancelled') => {
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+    const prev = requests.find((r) => r.id === id);
+    setRequests((list) => list.map((r) => (r.id === id ? { ...r, status } : r)));
     try {
       await updateRequestStatus(id, status);
-    } catch {
-      getRequests().then(setRequests);
+    } catch (err) {
+      // Revert optimistic update and show error
+      if (prev) setRequests((list) => list.map((r) => (r.id === id ? { ...r, status: prev.status } : r)));
+      alert(err instanceof Error ? err.message : 'Erro ao atualizar status');
     }
   };
 
@@ -558,10 +561,19 @@ export default function AdminPage() {
                                 {formatDatePtBR(req.date, { day: '2-digit', month: 'short' })} · {req.time} · {req.court}
                               </div>
                             </div>
-                            <div className={`px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 ${
-                              req.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                              {req.status === 'rejected' ? 'Recusado' : 'Cancelado'}
+                            <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => updateStatus(req.id, 'accepted')}
+                                className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 transition-colors"
+                                title="Aceitar pedido"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              </button>
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                                req.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {req.status === 'rejected' ? 'Recusado' : 'Cancelado'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -622,6 +634,7 @@ export default function AdminPage() {
           onClose={() => setDetailRequest(null)}
           onAccept={() => { updateStatus(detailRequest.id, 'accepted'); setDetailRequest(null); }}
           onReject={() => { updateStatus(detailRequest.id, 'rejected'); setDetailRequest(null); }}
+          onRestore={() => { updateStatus(detailRequest.id, 'accepted'); setDetailRequest(null); }}
           onAdminCancel={() => { updateStatus(detailRequest.id, 'cancelled'); setDetailRequest(null); }}
           onChat={() => {
             setChatUser({ name: detailRequest.userName, email: detailRequest.userEmail });

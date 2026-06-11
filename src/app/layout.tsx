@@ -1,10 +1,25 @@
 import type { Metadata } from 'next';
+import { Space_Grotesk, Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider, AuthUser } from '@/lib/auth-context';
 import { getSession } from '@/lib/session';
 
+const display = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-display',
+  display: 'swap',
+});
+
+const body = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-body',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: 'CEEAM – Sistema de Agendamento',
+  title: 'CEEAM · Agenda das Quadras',
   description: 'Centro Esportivo Educacional da Antônio Meneghetti Faculdade',
 };
 
@@ -16,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     : null;
 
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={`${display.variable} ${body.variable}`}>
       <body>
         <AuthProvider initialSession={initialSession}>{children}</AuthProvider>
       </body>

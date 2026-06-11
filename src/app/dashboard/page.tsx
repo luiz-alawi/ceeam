@@ -1,49 +1,58 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { LogOut, Calendar as CalendarIcon, Plus, Clock, CheckCircle, XCircle, AlertCircle, Loader2, MessageCircle } from 'lucide-react';
-import Calendar from '@/components/Calendar';
+import { Loader2, MessageCircle, Plus, CalendarCheck2, CheckCircle2, Hourglass, XCircle } from 'lucide-react';
+import TopAppBar from '@/components/agenda/TopAppBar';
+import DayRail from '@/components/agenda/DayRail';
+import CourtBoard from '@/components/agenda/CourtBoard';
 import BookingModal from '@/components/BookingModal';
 import BookingDetailModal from '@/components/BookingDetailModal';
 import ChatModal from '@/components/ChatModal';
 import { getBookings, createBooking, cancelBooking } from '@/actions/bookings';
 import { getCalendarData } from '@/actions/calendar';
+import { buildBoard, toYMD, courtColor } from '@/lib/calendar';
+import { COURTS, TIME_SLOTS } from '@/data/mockData';
 import { formatDatePtBR } from '@/utils/dateUtils';
 import type { Booking, CalendarEntry, GymClosure, WeeklyEvent } from '@/types';
+
+const STATUS_CHIP: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
+  accepted: { label: 'Confirmado', icon: <CheckCircle2 className="w-3.5 h-3.5" />, cls: 'bg-[#e7f6ec] text-[#1f7a44]' },
+  pending:  { label: 'Pendente',   icon: <Hourglass className="w-3.5 h-3.5" />,    cls: 'bg-[#fdf2e3] text-[#b45309]' },
+  rejected: { label: 'Recusado',   icon: <XCircle className="w-3.5 h-3.5" />,      cls: 'bg-[#fdecec] text-[#b91c1c]' },
+  cancelled:{ label: 'Cancelado',  icon: <XCircle className="w-3.5 h-3.5" />,      cls: 'bg-[#eef2f7] text-[#5b6b80]' },
+};
 
 export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, currentUser, logout } = useAuth();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [calendarBookings, setCalendarBookings] = useState<CalendarEntry[]>([]);
+  const [busy, setBusy] = useState<CalendarEntry[]>([]);
   const [closures, setClosures] = useState<GymClosure[]>([]);
   const [weeklyEvents, setWeeklyEvents] = useState<WeeklyEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showBookingModal, setShowBookingModal] = useState(false);
-  const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>();
-  const [showChat, setShowChat] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+  const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
+  const [rangeStart, setRangeStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
+
+  const [bookingPrefill, setBookingPrefill] = useState<{ date?: string; time?: string; court?: string } | null>(null);
   const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
+  const [showChat, setShowChat] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) { router.replace('/login'); return; }
+    if (!isAuthenticated) { router.replace('/login'); }
   }, [isAuthenticated, router]);
 
   useEffect(() => {
     if (!currentUser) return;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      getBookings(currentUser),
-      getCalendarData(),
-    ])
+    setLoading(true); setError(null);
+    Promise.all([getBookings(currentUser), getCalendarData()])
       .then(([userBookings, calData]) => {
         setBookings(userBookings);
-        setCalendarBookings(calData.bookings);
+        setBusy(calData.bookings);
         setClosures(calData.closures);
         setWeeklyEvents(calData.weeklyEvents);
       })
@@ -51,174 +60,179 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [currentUser]);
 
+  const board = useMemo(
+    () => buildBoard({ date: selectedDate, slots: TIME_SLOTS, courts: COURTS, ownBookings: bookings, busy, weeklyEvents, closures }),
+    [selectedDate, bookings, busy, weeklyEvents, closures],
+  );
+
+  const closedDays = useMemo(() => new Set(closures.map((c) => c.date)), [closures]);
+  const trainingDows = useMemo(() => new Set(weeklyEvents.map((w) => w.dayOfWeek)), [weeklyEvents]);
+  const myDays = useMemo(
+    () => new Set(bookings.filter((b) => b.status === 'accepted' || b.status === 'pending').map((b) => b.date)),
+    [bookings],
+  );
+
+  const myUpcoming = useMemo(() => {
+    const today = toYMD(new Date());
+    return bookings
+      .filter((b) => b.status !== 'cancelled' && b.status !== 'rejected' && b.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  }, [bookings]);
+
   if (!isAuthenticated) return null;
-
-  const handleLogout = () => { logout(); };
-
-  const toYMD = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-  const handleDateDoubleClick = (date: Date) => {
-    setSelectedDate(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    setBookingInitialDate(date >= today ? toYMD(date) : undefined);
-    setShowBookingModal(true);
-  };
 
   const handleNewBooking = async (data: { date: string; time: string; court: string; equipment: string[]; players: string[] }) => {
     const booking = await createBooking({ ...data, userEmail: currentUser, userName: currentUser });
     setBookings((prev) => [booking, ...prev]);
-    setShowBookingModal(false);
+    setBookingPrefill(null);
   };
 
   const handleCancelBooking = async (id: string) => {
     setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'cancelled' as const } : b)));
-    try {
-      await cancelBooking(id);
-    } catch {
-      getBookings(currentUser).then(setBookings);
-    }
+    try { await cancelBooking(id); }
+    catch { getBookings(currentUser).then(setBookings); }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'accepted': return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'rejected': return <XCircle className="w-4 h-4 text-red-600" />;
-      default:         return <AlertCircle className="w-4 h-4 text-yellow-500" />;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'accepted':  return { text: 'Aceito',    cls: 'bg-green-50  text-green-700  border-green-200'  };
-      case 'rejected':  return { text: 'Recusado',  cls: 'bg-red-50    text-red-700    border-red-200'    };
-      case 'cancelled': return { text: 'Cancelado', cls: 'bg-gray-100  text-gray-500   border-gray-200'   };
-      default:          return { text: 'Pendente',  cls: 'bg-yellow-50 text-yellow-700 border-yellow-200' };
-    }
-  };
+  const heroDate = formatDatePtBR(toYMD(selectedDate), { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="Logo" className="h-8" />
+    <div className="min-h-screen flex flex-col">
+      <TopAppBar title="Agenda das Quadras" userEmail={currentUser} onLogout={logout} />
+
+      {/* ── Hero band ── */}
+      <div className="bg-[var(--ink)] court-lines text-white px-4 sm:px-6 pt-5 pb-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-end justify-between gap-4 mb-4 flex-wrap">
             <div>
-              <div className="font-semibold text-sm text-gray-900">Centro Esportivo Educacional</div>
-              <div className="text-xs text-gray-500">{currentUser}</div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--brand-300)]">
+                Disponibilidade das quadras
+              </p>
+              <h1 className="font-display text-[26px] sm:text-[32px] font-bold capitalize leading-tight mt-1">
+                {heroDate}
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { const t = new Date(); t.setHours(0,0,0,0); setSelectedDate(t); setRangeStart(t); }}
+                className="px-4 py-2 rounded-xl text-[13px] font-semibold bg-white/10 hover:bg-white/20 border border-white/10 transition-colors"
+              >
+                Hoje
+              </button>
+              <button
+                onClick={() => setBookingPrefill({})}
+                className="px-4 py-2 rounded-xl text-[13px] font-semibold bg-[var(--brand)] hover:bg-[var(--brand-700)] flex items-center gap-1.5 shadow-[0_6px_18px_rgba(18,115,194,.45)] transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Novo agendamento
+              </button>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Sair
-          </button>
-        </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-5">
-        <div className="mb-4">
-          <h1 className="text-xl font-bold text-gray-900">Agendamentos</h1>
-          <p className="text-sm text-gray-500">Visualize e gerencie suas reservas de quadra</p>
+          <DayRail
+            selected={selectedDate}
+            onSelect={setSelectedDate}
+            rangeStart={rangeStart}
+            days={21}
+            onShift={(d) => setRangeStart((prev) => { const n = new Date(prev); n.setDate(n.getDate() + d); return n; })}
+            closedDays={closedDays}
+            myDays={myDays}
+            trainingDows={trainingDows}
+          />
         </div>
+      </div>
 
+      {/* ── Body ── */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            <span className="text-sm">Carregando...</span>
+          <div className="flex items-center justify-center py-24 text-[var(--muted)]">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" /> <span className="text-[14px]">Carregando…</span>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center text-red-600">{error}</div>
+          <div className="bg-[#fdecec] text-[#b91c1c] rounded-2xl px-6 py-4 text-[14px]">{error}</div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-5">
-            {/* Calendar */}
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <CalendarIcon className="w-4 h-4 text-blue-600" />
-                    <h2 className="text-sm font-bold text-gray-900">Disponibilidade das Quadras</h2>
-                  </div>
-                  <button
-                    onClick={() => { setBookingInitialDate(undefined); setShowBookingModal(true); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Agendar
-                  </button>
-                </div>
+          <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+            <CourtBoard
+              board={board}
+              onBook={(court, time) => setBookingPrefill({ date: toYMD(selectedDate), time, court })}
+              onOpenBooking={setDetailBooking}
+            />
 
-                <Calendar
-                  bookings={calendarBookings}
-                  closures={closures}
-                  weeklyEvents={weeklyEvents}
-                  onDateClick={setSelectedDate}
-                  onDateDoubleClick={handleDateDoubleClick}
-                  selectedDate={selectedDate}
-                />
-              </div>
-            </div>
-
-            {/* My bookings */}
-            <div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            {/* Right rail */}
+            <aside className="space-y-4">
+              <div className="rounded-3xl bg-white border border-[var(--line)] p-4 shadow-[0_1px_3px_rgba(10,22,38,.06)]">
                 <div className="flex items-center gap-2 mb-3">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  <h2 className="text-sm font-bold text-gray-900">Meus Agendamentos</h2>
+                  <CalendarCheck2 className="w-4 h-4 text-[var(--brand)]" />
+                  <h2 className="font-display text-[15px] font-semibold">Minhas reservas</h2>
                 </div>
 
-                <div className="space-y-2">
-                  {bookings.length === 0 ? (
-                    <div className="text-center py-6 text-gray-400">
-                      <CalendarIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-xs">Nenhum agendamento ainda</p>
-                      <p className="text-xs mt-0.5 text-gray-400">Clique em &quot;Agendar&quot; para começar</p>
+                {myUpcoming.length === 0 ? (
+                  <div className="text-center py-6">
+                    <div className="mx-auto w-11 h-11 rounded-2xl bg-[var(--brand-tint)] grid place-items-center mb-2">
+                      <CalendarCheck2 className="w-5 h-5 text-[var(--brand)]" />
                     </div>
-                  ) : (
-                    bookings.map((booking) => {
-                      const { text, cls } = getStatusLabel(booking.status);
+                    <p className="text-[13px] text-[var(--muted)]">Nenhuma reserva futura.</p>
+                    <button onClick={() => setBookingPrefill({})} className="mt-2 text-[13px] font-semibold text-[var(--brand)] hover:underline">
+                      Fazer um agendamento
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {myUpcoming.map((b) => {
+                      const chip = STATUS_CHIP[b.status] ?? STATUS_CHIP.pending;
+                      const col = courtColor(b.court, COURTS);
                       return (
                         <button
-                          key={booking.id}
-                          onClick={() => setDetailBooking(booking)}
-                          className="w-full text-left border border-gray-200 rounded-lg p-3 hover:border-blue-400 hover:shadow-sm transition-all"
+                          key={b.id}
+                          onClick={() => setDetailBooking(b)}
+                          className="w-full text-left rounded-2xl border border-[var(--line)] p-3 hover:border-[var(--brand-300)] hover:shadow-sm transition-all flex gap-3"
                         >
-                          <div className="flex items-start justify-between mb-1.5">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-900 text-xs">{booking.court}</div>
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                {formatDatePtBR(booking.date, { day: '2-digit', month: 'short', year: 'numeric' })}
-                                {' · '}{booking.time}
-                              </div>
-                              {booking.players.length > 0 && (
-                                <div className="text-[10px] text-blue-600 mt-0.5">
-                                  {booking.players.length} jogador{booking.players.length > 1 ? 'es' : ''}
-                                </div>
-                              )}
+                          <span className="w-1.5 rounded-full shrink-0" style={{ background: col.dot }} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-display text-[14px] font-semibold truncate">{b.court}</span>
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${chip.cls}`}>
+                                {chip.icon} {chip.label}
+                              </span>
                             </div>
-                            {getStatusIcon(booking.status)}
+                            <div className="text-[12px] text-[var(--muted)] mt-0.5">
+                              {formatDatePtBR(b.date, { day: '2-digit', month: 'short' })} · {b.time}
+                            </div>
                           </div>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${cls}`}>
-                            {text}
-                          </span>
                         </button>
                       );
-                    })
-                  )}
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Legend */}
+              <div className="rounded-3xl bg-white border border-[var(--line)] p-4 shadow-[0_1px_3px_rgba(10,22,38,.06)]">
+                <h2 className="font-display text-[13px] font-semibold text-[var(--muted)] uppercase tracking-wide mb-2.5">Legenda</h2>
+                <div className="space-y-1.5 text-[12px] text-[var(--ink)]">
+                  {[
+                    { c: '#1273c2', l: 'Horário livre / sua reserva' },
+                    { c: '#6d4bd8', l: 'Treino fixo semanal' },
+                    { c: '#d97706', l: 'Solicitação pendente' },
+                    { c: '#dc2626', l: 'Ginásio fechado' },
+                  ].map((x) => (
+                    <div key={x.l} className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.c }} /> {x.l}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            </aside>
           </div>
         )}
       </main>
 
-      {showBookingModal && (
+      {bookingPrefill && (
         <BookingModal
-          onClose={() => { setShowBookingModal(false); setBookingInitialDate(undefined); }}
+          onClose={() => setBookingPrefill(null)}
           onSubmit={handleNewBooking}
           weeklyEvents={weeklyEvents}
-          initialDate={bookingInitialDate}
+          initialDate={bookingPrefill.date}
+          initialTime={bookingPrefill.time}
+          initialCourt={bookingPrefill.court}
         />
       )}
 
@@ -226,31 +240,22 @@ export default function DashboardPage() {
         <BookingDetailModal
           booking={detailBooking}
           onClose={() => setDetailBooking(null)}
-          onCancel={() => {
-            handleCancelBooking(detailBooking.id);
-            setDetailBooking(null);
-          }}
+          onCancel={() => { handleCancelBooking(detailBooking.id); setDetailBooking(null); }}
         />
       )}
 
-      {/* Floating chat button */}
       {!showChat && (
         <button
           onClick={() => setShowChat(true)}
-          className="fixed bottom-4 right-4 w-11 h-11 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center z-40"
+          className="fixed bottom-5 right-5 h-14 px-5 bg-[var(--ink)] text-white rounded-2xl shadow-[0_10px_30px_rgba(10,22,38,.35)] hover:bg-[var(--ink-soft)] transition-colors flex items-center gap-2 z-40"
           title="Falar com o suporte"
         >
-          <MessageCircle className="w-6 h-6" />
+          <MessageCircle className="w-5 h-5" /> <span className="text-[13px] font-semibold hidden sm:inline">Suporte</span>
         </button>
       )}
 
       {showChat && currentUser && (
-        <ChatModal
-          userName="Suporte"
-          userEmail={currentUser}
-          onClose={() => setShowChat(false)}
-          senderRole="user"
-        />
+        <ChatModal userName="Suporte" userEmail={currentUser} onClose={() => setShowChat(false)} senderRole="user" />
       )}
     </div>
   );

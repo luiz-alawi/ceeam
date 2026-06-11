@@ -122,58 +122,64 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* ── CEEAM brand design tokens (logo: azul #1070C0 + tinta preta) ── */
+:root {
+  --ink: #0a1626;          /* near-black brand ink */
+  --ink-soft: #1b2a3d;
+  --brand: #1273c2;        /* logo blue */
+  --brand-700: #0e5c9e;
+  --brand-300: #6db2e6;
+  --brand-tint: #e8f1fb;
+  --paper: #f4f7fb;
+  --line: #e2e8f1;
+  --muted: #5b6b80;
+  --court-2: #0f3d63;      /* deep navy for second court (on-brand) */
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
 
   body {
-    @apply bg-background text-foreground;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
-  html {
-    font-size: var(--font-size);
-  }
+  html { font-size: 16px; }
 
-  h1 {
-    font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h2 {
-    font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h3 {
-    font-size: var(--text-lg);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h4 {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  label {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  button {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  input {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-normal);
-    line-height: 1.5;
+  h1, h2, h3, h4 {
+    font-family: var(--font-display), var(--font-body), sans-serif;
+    line-height: 1.1;
+    color: inherit;
   }
 }
+
+.font-display { font-family: var(--font-display), var(--font-body), sans-serif; }
+
+/* thin custom scrollbars */
+.nice-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.nice-scroll::-webkit-scrollbar-thumb {
+  background: #c4d2e3; border: 2px solid transparent; background-clip: content-box; border-radius: 8px;
+}
+.nice-scroll::-webkit-scrollbar-thumb:hover { background: #9fb4cd; background-clip: content-box; }
+.nice-scroll::-webkit-scrollbar-track { background: transparent; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* subtle court-line texture for the ink hero */
+.court-lines {
+  background-image:
+    linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 38px 38px;
+}
+
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+.anim-pop { animation: pop .16s cubic-bezier(.2,.8,.2,1); }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.anim-rise { animation: rise .4s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes livedot { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.live-dot { animation: livedot 1.4s ease-in-out infinite; }

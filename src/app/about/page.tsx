@@ -1,114 +1,96 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, Users, CheckCircle } from 'lucide-react';
+import { CalendarDays, Clock, Users, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+
+const FEATURES = [
+  { icon: CalendarDays, title: 'Reserva por dia', desc: 'Escolha o dia na régua, veja as quadras lado a lado e reserve o horário livre com um clique.' },
+  { icon: Clock, title: 'Status em tempo real', desc: 'Acompanhe suas reservas, o histórico e a situação de cada solicitação sem complicação.' },
+  { icon: Users, title: 'Conversa direta', desc: 'Chat integrado entre usuários e administradores para resolver tudo na hora.' },
+  { icon: CheckCircle, title: 'Aprovação ágil', desc: 'Administradores aprovam ou recusam solicitações com transparência e organização.' },
+];
 
 export default function AboutPage() {
   const router = useRouter();
   const { isAuthenticated, isAdmin } = useAuth();
 
   const goToApp = () => {
-    if (isAuthenticated) {
-      router.push(isAdmin ? '/admin' : '/dashboard');
-    } else {
-      router.push('/login');
-    }
+    if (isAuthenticated) router.push(isAdmin ? '/admin' : '/dashboard');
+    else router.push('/login');
   };
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-[var(--line)] sticky top-0 bg-white/90 backdrop-blur z-10">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Logo" className="h-12" />
-            <span className="font-bold text-gray-900">Centro Esportivo Educacional</span>
+            <img src="/logo.png" alt="AMF" className="h-10 w-10 object-contain" />
+            <span className="font-display font-semibold text-[16px] text-[var(--ink)]">Centro Esportivo Educacional</span>
           </div>
-          <button
-            onClick={goToApp}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            {isAuthenticated ? 'Ir para o sistema' : 'Entrar'}
+          <button onClick={goToApp} className="px-5 py-2 bg-[var(--brand)] text-white rounded-xl text-[14px] font-semibold hover:bg-[var(--brand-700)] transition-colors">
+            {isAuthenticated ? 'Ir para a agenda' : 'Entrar'}
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-16">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-900 mb-6">
-            Sistema de Agendamento de Quadras
+      {/* Hero */}
+      <section className="bg-[var(--ink)] court-lines text-white">
+        <div className="max-w-6xl mx-auto px-6 py-20 text-center">
+          <span className="inline-block text-[12px] font-semibold uppercase tracking-[0.2em] text-[var(--brand-300)] mb-5">
+            Antônio Meneghetti Faculdade
+          </span>
+          <h1 className="font-display text-[44px] sm:text-[60px] leading-[1.04] font-bold mb-5">
+            A quadra livre,<br /><span className="text-[var(--brand-300)]">na palma da mão.</span>
           </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Facilitando e organizando o agendamento das quadras do Centro Esportivo Educacional
-            da Antônio Meneghetti Faculdade.
+          <p className="text-[18px] text-white/65 max-w-2xl mx-auto mb-9">
+            Uma nova forma de agendar as quadras do Centro Esportivo Educacional — rápida,
+            visual e transparente para toda a comunidade acadêmica.
           </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-8 mb-16">
-          <div className="bg-blue-50 p-8 rounded-xl">
-            <Calendar className="w-12 h-12 text-blue-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Agendamento Simples</h3>
-            <p className="text-gray-600">
-              Visualize a disponibilidade das quadras em um calendário interativo e faça
-              seu agendamento em poucos cliques.
-            </p>
-          </div>
-
-          <div className="bg-blue-50 p-8 rounded-xl">
-            <Clock className="w-12 h-12 text-blue-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Gestão de Horários</h3>
-            <p className="text-gray-600">
-              Acompanhe seus agendamentos, visualize o histórico e receba atualizações
-              sobre o status das suas solicitações.
-            </p>
-          </div>
-
-          <div className="bg-blue-50 p-8 rounded-xl">
-            <Users className="w-12 h-12 text-blue-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Comunicação Direta</h3>
-            <p className="text-gray-600">
-              Sistema de mensagens integrado permite comunicação rápida entre usuários
-              e administradores para resolver dúvidas.
-            </p>
-          </div>
-
-          <div className="bg-blue-50 p-8 rounded-xl">
-            <CheckCircle className="w-12 h-12 text-blue-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Aprovação Rápida</h3>
-            <p className="text-gray-600">
-              Administradores podem aprovar ou recusar solicitações com facilidade,
-              mantendo o processo organizado e transparente.
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-12 text-center mb-16">
-          <h2 className="text-3xl font-bold mb-6">Pronto para começar?</h2>
-          <p className="text-xl mb-8 text-blue-100">
-            Acesse o sistema e faça seu agendamento de forma rápida e prática.
-          </p>
-          <button
-            onClick={goToApp}
-            className="px-8 py-4 bg-white text-blue-600 rounded-lg font-bold text-lg hover:bg-blue-50 transition-colors"
-          >
-            Ir para o sistema de agendamento
+          <button onClick={goToApp}
+            className="inline-flex items-center gap-2 px-7 py-3.5 bg-[var(--brand)] text-white rounded-2xl text-[15px] font-semibold hover:bg-[var(--brand-700)] shadow-[0_10px_30px_rgba(18,115,194,.4)] transition-colors">
+            Acessar a agenda <ArrowRight className="w-4 h-4" />
           </button>
         </div>
+      </section>
 
-        <div className="border-t border-gray-200 pt-12 text-center">
-          <h3 className="text-2xl font-bold text-gray-900 mb-4">Sobre o Projeto</h3>
-          <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
-            Este sistema foi desenvolvido para modernizar e facilitar o processo de agendamento
-            das instalações esportivas da Antônio Meneghetti Faculdade, proporcionando uma
-            experiência mais eficiente e organizada para toda a comunidade acadêmica.
-          </p>
-          <div className="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 rounded-lg">
-            <span className="text-gray-700 font-medium">Desenvolvido por</span>
-            <span className="font-bold text-blue-600">Luiz Alawi</span>
-            <span className="text-gray-400">e</span>
-            <span className="font-bold text-blue-600">Henry Godoi</span>
+      <main className="max-w-6xl mx-auto px-6">
+        <section className="grid sm:grid-cols-2 gap-5 py-16">
+          {FEATURES.map((f) => (
+            <div key={f.title} className="rounded-3xl border border-[var(--line)] p-7 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+              <div className="w-12 h-12 rounded-2xl bg-[var(--brand-tint)] grid place-items-center mb-4">
+                <f.icon className="w-6 h-6 text-[var(--brand)]" />
+              </div>
+              <h3 className="font-display text-[19px] font-semibold text-[var(--ink)] mb-2">{f.title}</h3>
+              <p className="text-[14px] text-[var(--muted)] leading-relaxed">{f.desc}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="rounded-[2rem] bg-[var(--brand)] text-white px-8 py-14 text-center mb-16 relative overflow-hidden">
+          <div className="absolute inset-0 court-lines opacity-40" />
+          <div className="relative">
+            <h2 className="font-display text-[32px] font-bold mb-3">Pronto para começar?</h2>
+            <p className="text-[17px] text-white/85 mb-7 max-w-xl mx-auto">Acesse o sistema e faça seu agendamento de forma rápida e prática.</p>
+            <button onClick={goToApp} className="px-7 py-3.5 bg-white text-[var(--brand-700)] rounded-2xl text-[15px] font-semibold hover:bg-white/90 transition-colors">
+              Ir para o sistema de agendamento
+            </button>
           </div>
-        </div>
+        </section>
+
+        <section className="border-t border-[var(--line)] py-14 text-center">
+          <h3 className="font-display text-[22px] font-semibold text-[var(--ink)] mb-3">Sobre o projeto</h3>
+          <p className="text-[15px] text-[var(--muted)] mb-6 max-w-2xl mx-auto leading-relaxed">
+            Sistema desenvolvido para modernizar e facilitar o agendamento das instalações esportivas
+            da Antônio Meneghetti Faculdade, com uma experiência mais eficiente e organizada para todos.
+          </p>
+          <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-[var(--paper)] border border-[var(--line)] rounded-full text-[14px]">
+            <span className="text-[var(--muted)]">Desenvolvido por</span>
+            <a href="https://luiz-alawi.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-[var(--brand)] hover:underline">Luiz Alawi</a>
+            <span className="text-[#94a3b8]">e</span>
+            <a href="https://github.com/henrygodoi" target="_blank" rel="noopener noreferrer" className="font-semibold text-[var(--brand)] hover:underline">Henry Godoi</a>
+          </div>
+        </section>
       </main>
     </div>
   );

@@ -1,0 +1,26 @@
+{
+  "name": "CEEAM · Agenda das Quadras",
+  "short_name": "CEEAM",
+  "description": "Agendamento das quadras do Centro Esportivo Educacional da Antônio Meneghetti Faculdade",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1726",
+  "theme_color": "#0e1726",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

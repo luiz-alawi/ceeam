@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import { X, CalendarDays, Clock, MapPin, Package, Users, Plus } from 'lucide-react';
 import { COURTS, TIME_SLOTS, EQUIPMENT } from '@/data/mockData';
-import { courtColor } from '@/lib/calendar';
+import { courtColor, slotHasPassed, toYMD } from '@/lib/calendar';
 import type { WeeklyEvent } from '@/types';
 
 interface BookingModalProps {
   onClose: () => void;
-  onSubmit: (booking: { date: string; time: string; court: string; equipment: string[]; players: string[] }) => Promise<void>;
+  onSubmit: (booking: { date: string; time: string; court: string; equipment: string[]; players: string[]; playerCount: number }) => Promise<void>;
   weeklyEvents?: WeeklyEvent[];
   initialDate?: string;
   initialTime?: string;
@@ -22,10 +22,15 @@ export default function BookingModal({
   const [time, setTime] = useState(initialTime ?? '');
   const [court, setCourt] = useState(initialCourt ?? '');
   const [equipment, setEquipment] = useState<string[]>([]);
+  const [playerCount, setPlayerCount] = useState<number | ''>('');
   const [players, setPlayers] = useState<string[]>([]);
   const [playerInput, setPlayerInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const countNum = typeof playerCount === 'number' ? playerCount : 0;
+  const playersFull = countNum > 0 && players.length >= countNum;
+  const playersComplete = countNum > 0 && players.length === countNum;
 
   const blockedTimes = new Set(
     court && date
@@ -36,9 +41,17 @@ export default function BookingModal({
   const toggleEquipment = (item: string) =>
     setEquipment((prev) => (prev.includes(item) ? prev.filter((e) => e !== item) : [...prev, item]));
 
+  const handleCountChange = (v: string) => {
+    if (v === '') { setPlayerCount(''); return; }
+    const n = Math.max(1, Math.floor(Number(v)));
+    if (!Number.isFinite(n)) return;
+    setPlayerCount(n);
+    setPlayers((prev) => prev.slice(0, n)); // descarta jogadores além do novo limite
+  };
+
   const addPlayer = () => {
     const name = playerInput.trim();
-    if (!name || players.includes(name)) return;
+    if (!name || players.includes(name) || playersFull) return;
     setPlayers((prev) => [...prev, name]);
     setPlayerInput('');
   };
@@ -50,8 +63,13 @@ export default function BookingModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!date || !time || !court) return;
+    if (countNum < 1) { setError('Informe quantas pessoas vão jogar.'); return; }
+    if (players.length !== countNum) {
+      setError(`Adicione exatamente ${countNum} jogador(es) — você adicionou ${players.length}.`);
+      return;
+    }
     setError(''); setSubmitting(true);
-    try { await onSubmit({ date, time, court, equipment, players }); }
+    try { await onSubmit({ date, time, court, equipment, players, playerCount: countNum }); }
     catch (err) { setError(err instanceof Error ? err.message : 'Erro ao criar agendamento'); }
     finally { setSubmitting(false); }
   };
@@ -92,37 +110,64 @@ export default function BookingModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}><CalendarDays className="w-4 h-4 text-[var(--brand)]" /> Data</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} min={new Date().toISOString().split('T')[0]} required className={field} />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} min={toYMD(new Date())} required className={field} />
             </div>
             <div>
               <label className={labelCls}><Clock className="w-4 h-4 text-[var(--brand)]" /> Horário</label>
               <select value={time} onChange={(e) => setTime(e.target.value)} required className={field}>
                 <option value="">Selecione…</option>
-                {TIME_SLOTS.map((t) => (
-                  <option key={t} value={t} disabled={blockedTimes.has(t)}>{t}{blockedTimes.has(t) ? ' — ocupado (fixo)' : ''}</option>
-                ))}
+                {TIME_SLOTS.map((t) => {
+                  const passed = date ? slotHasPassed(date, t, new Date()) : false;
+                  const blocked = blockedTimes.has(t);
+                  return (
+                    <option key={t} value={t} disabled={blocked || passed}>
+                      {t}{blocked ? ' — ocupado (fixo)' : passed ? ' — já passou' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
 
           <div>
-            <label className={labelCls}><Users className="w-4 h-4 text-[var(--brand)]" /> Jogadores</label>
-            <div className="flex gap-2 mb-2">
-              <input type="text" value={playerInput} onChange={(e) => setPlayerInput(e.target.value)} onKeyDown={handlePlayerKeyDown} placeholder="Nome do jogador…" className={field} />
-              <button type="button" onClick={addPlayer} disabled={!playerInput.trim()} className="px-3 bg-[var(--brand)] text-white rounded-xl hover:bg-[var(--brand-700)] transition-colors disabled:opacity-40 flex items-center">
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            {players.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {players.map((p) => (
-                  <span key={p} className="flex items-center gap-1 px-2.5 py-1 bg-[var(--brand-tint)] text-[var(--brand-700)] rounded-full text-[12px] font-semibold">
-                    {p}<button type="button" onClick={() => removePlayer(p)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
-                  </span>
-                ))}
-              </div>
-            ) : <p className="text-[12px] text-[var(--muted)]">Nenhum jogador adicionado.</p>}
+            <label className={labelCls}><Users className="w-4 h-4 text-[var(--brand)]" /> Quantas pessoas vão jogar?</label>
+            <input
+              type="number" min={1} value={playerCount}
+              onChange={(e) => handleCountChange(e.target.value)}
+              placeholder="Ex: 4" className={field}
+            />
           </div>
+
+          {countNum > 0 && (
+            <div>
+              <label className={labelCls}>
+                <Users className="w-4 h-4 text-[var(--brand)]" /> Jogadores
+                <span className="ml-auto normal-case tracking-normal font-semibold text-[var(--muted)]">{players.length}/{countNum}</span>
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text" value={playerInput}
+                  onChange={(e) => setPlayerInput(e.target.value)}
+                  onKeyDown={handlePlayerKeyDown}
+                  disabled={playersFull}
+                  placeholder={playersFull ? 'Todos os jogadores adicionados' : 'Nome do jogador…'}
+                  className={`${field} disabled:opacity-50`}
+                />
+                <button type="button" onClick={addPlayer} disabled={!playerInput.trim() || playersFull} className="px-3 bg-[var(--brand)] text-white rounded-xl hover:bg-[var(--brand-700)] transition-colors disabled:opacity-40 flex items-center">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              {players.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {players.map((p) => (
+                    <span key={p} className="flex items-center gap-1 px-2.5 py-1 bg-[var(--brand-tint)] text-[var(--brand-700)] rounded-full text-[12px] font-semibold">
+                      {p}<button type="button" onClick={() => removePlayer(p)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              ) : <p className="text-[12px] text-[var(--muted)]">Adicione os {countNum} jogador(es).</p>}
+            </div>
+          )}
 
           <div>
             <label className={labelCls}><Package className="w-4 h-4 text-[var(--brand)]" /> Equipamentos (opcional)</label>
@@ -145,7 +190,7 @@ export default function BookingModal({
 
           <div className="flex items-center justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-[14px] font-semibold text-[var(--muted)] hover:bg-[var(--paper)] transition-colors">Cancelar</button>
-            <button type="submit" disabled={submitting || !court || !date || !time}
+            <button type="submit" disabled={submitting || !court || !date || !time || !playersComplete}
               className="px-6 py-2.5 bg-[var(--brand)] text-white rounded-xl text-[14px] font-semibold hover:bg-[var(--brand-700)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               {submitting ? 'Enviando…' : 'Solicitar reserva'}
             </button>

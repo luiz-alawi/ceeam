@@ -12,7 +12,8 @@ export interface AuthUser {
 interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
-  currentUser: string;
+  currentUser: string; // e-mail (identificador único)
+  currentName: string; // nome de exibição
   logout: () => Promise<void>;
 }
 
@@ -38,6 +39,7 @@ export function AuthProvider({
         isAuthenticated: !!user,
         isAdmin: user?.isAdmin ?? false,
         currentUser: user?.email ?? '',
+        currentName: user?.name ?? '',
         logout,
       }}
     >

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DayRail from '@/components/agenda/DayRail';
 import CourtBoard from '@/components/agenda/CourtBoard';
 import BookingDetailModal from '@/components/BookingDetailModal';
@@ -25,6 +25,13 @@ export default function AdminCalendarTab({
   const [rangeStart, setRangeStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [detail, setDetail] = useState<Request | null>(null);
 
+  // Relógio que avança ao longo do dia, ocultando horários já passados (igual ao dashboard).
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const byId = useMemo(() => new Map(requests.map((r) => [r.id, r])), [requests]);
   const ownBookings = useMemo(
     () => requests.filter((r) => r.status === 'pending' || r.status === 'accepted') as unknown as Booking[],
@@ -32,7 +39,7 @@ export default function AdminCalendarTab({
   );
 
   const board = useMemo(() => {
-    const b = buildBoard({ date: selectedDate, slots: TIME_SLOTS, courts: COURTS, ownBookings, busy: calendarBookings, weeklyEvents, closures });
+    const b = buildBoard({ date: selectedDate, slots: TIME_SLOTS, courts: COURTS, ownBookings, busy: calendarBookings, weeklyEvents, closures, now });
     // Relabel own slots with the requester name for the admin perspective.
     for (const lane of b.lanes) {
       for (const slot of lane.slots) {
@@ -43,7 +50,7 @@ export default function AdminCalendarTab({
       }
     }
     return b;
-  }, [selectedDate, ownBookings, calendarBookings, weeklyEvents, closures, byId]);
+  }, [selectedDate, ownBookings, calendarBookings, weeklyEvents, closures, byId, now]);
 
   const closedDays = useMemo(() => new Set(closures.map((c) => c.date)), [closures]);
   const activeDays = useMemo(() => new Set(ownBookings.map((b) => b.date)), [ownBookings]);

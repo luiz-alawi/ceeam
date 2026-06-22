@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/session';
+import { validateBookingRules, getBookingSettings, promoteWaitlist } from '@/lib/booking-rules';
 import type { Booking } from '@/types';
 
 export async function getBookings(userEmail: string): Promise<Booking[]> {
@@ -21,39 +22,59 @@ export async function getBookings(userEmail: string): Promise<Booking[]> {
     equipment: r.equipment,
     players: r.players,
     status: r.status as Booking['status'],
+    attended: r.attended,
+    recurringGroupId: r.recurringGroupId,
+    reason: r.reason,
   }));
 }
 
-export async function createBooking(data: {
-  userName: string;
-  userEmail: string;
-  date: string;
-  time: string;
-  court: string;
-  equipment: string[];
-  players: string[];
-}): Promise<Booking> {
-  const session = await getSession();
-  if (!session.isLoggedIn) throw new Error('Não autenticado');
+/** Verifica se um horário/quadra está bloqueado por fechamento ou treino fixo. */
+async function checkBlocked(date: string, time: string, court: string): Promise<string | null> {
+  const closure = await prisma.gymClosure.findFirst({ where: { date } });
+  if (closure) return `O ginásio está fechado neste dia: ${closure.reason}`;
 
-  const closure = await prisma.gymClosure.findFirst({ where: { date: data.date } });
-  if (closure) {
-    throw new Error(`O ginásio está fechado neste dia: ${closure.reason}`);
-  }
-
-  const dayOfWeek = new Date(data.date + 'T12:00:00').getDay();
+  const dayOfWeek = new Date(date + 'T12:00:00').getDay();
   const weeklyConflict = await prisma.weeklyEvent.findFirst({
-    where: { dayOfWeek, time: data.time, court: data.court },
+    where: { dayOfWeek, time, court },
   });
-  if (weeklyConflict) {
-    throw new Error(`Este horário está reservado para: ${weeklyConflict.title}`);
-  }
+  if (weeklyConflict) return `Este horário está reservado para: ${weeklyConflict.title}`;
 
-  const bookingConflict = await prisma.booking.findFirst({
+  return null;
+}
+
+/** Cria um agendamento individual. Retorna a reserva (pode ficar em lista de espera). */
+async function createOne(
+  data: {
+    userName: string;
+    userEmail: string;
+    date: string;
+    time: string;
+    court: string;
+    equipment: string[];
+    players: string[];
+  },
+  recurringGroupId?: string,
+  ruleOpts?: { skipMaxAdvance?: boolean; skipWeeklyCap?: boolean },
+  reason?: string,
+): Promise<Booking> {
+  const blocked = await checkBlocked(data.date, data.time, data.court);
+  if (blocked) throw new Error(blocked);
+
+  const ruleError = await validateBookingRules(data.userEmail, data.date, data.time, ruleOpts);
+  if (ruleError) throw new Error(ruleError);
+
+  // Horário já reservado → lista de espera (se habilitada) ou erro.
+  const taken = await prisma.booking.findFirst({
     where: { date: data.date, time: data.time, court: data.court, status: 'accepted' },
   });
-  if (bookingConflict) {
-    throw new Error('Este horário já está reservado para esta quadra.');
+
+  let status: Booking['status'] = 'pending';
+  if (taken) {
+    const settings = await getBookingSettings();
+    if (!settings.waitlistEnabled) {
+      throw new Error('Este horário já está reservado para esta quadra.');
+    }
+    status = 'waitlisted';
   }
 
   const row = await prisma.booking.create({
@@ -65,7 +86,9 @@ export async function createBooking(data: {
       court: data.court,
       equipment: data.equipment,
       players: data.players,
-      status: 'pending',
+      status,
+      recurringGroupId: recurringGroupId ?? null,
+      reason: reason ?? null,
     },
   });
 
@@ -77,7 +100,96 @@ export async function createBooking(data: {
     equipment: row.equipment,
     players: row.players,
     status: row.status as Booking['status'],
+    attended: row.attended,
+    recurringGroupId: row.recurringGroupId,
+    reason: row.reason,
   };
+}
+
+export async function createBooking(data: {
+  userName: string;
+  userEmail: string;
+  date: string;
+  time: string;
+  court: string;
+  equipment: string[];
+  players: string[];
+  playerCount: number;
+}): Promise<Booking> {
+  const session = await getSession();
+  if (!session.isLoggedIn) throw new Error('Não autenticado');
+
+  if (!Number.isInteger(data.playerCount) || data.playerCount < 1) {
+    throw new Error('Informe quantas pessoas vão jogar.');
+  }
+  const players = data.players.map((p) => p.trim()).filter(Boolean);
+  if (new Set(players).size !== players.length) {
+    throw new Error('Há jogadores repetidos na lista.');
+  }
+  if (players.length !== data.playerCount) {
+    throw new Error(`A lista deve ter exatamente ${data.playerCount} jogador(es).`);
+  }
+
+  const { playerCount: _ignored, ...rest } = data;
+  return createOne({ ...rest, players });
+}
+
+/**
+ * Cria um agendamento recorrente semanal por `weeks` semanas (incluindo a
+ * primeira). Ocorrências em datas bloqueadas/cheias são puladas. Retorna as
+ * reservas criadas e quantas foram puladas.
+ */
+export async function createRecurringBooking(
+  data: {
+    userName: string;
+    userEmail: string;
+    date: string;
+    time: string;
+    court: string;
+    equipment: string[];
+    players: string[];
+    reason: string;
+  },
+  weeks: number,
+): Promise<{ created: Booking[]; skipped: number }> {
+  const session = await getSession();
+  if (!session.isLoggedIn) throw new Error('Não autenticado');
+
+  if (!data.reason || data.reason.trim().length < 15) {
+    throw new Error('Informe a justificativa do horário fixo (mínimo 15 caracteres).');
+  }
+
+  const total = Math.min(Math.max(weeks, 1), 12);
+  const groupId = `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const base = new Date(data.date + 'T12:00:00');
+
+  const created: Booking[] = [];
+  let skipped = 0;
+  let firstError: string | null = null;
+
+  for (let i = 0; i < total; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i * 7);
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    try {
+      const booking = await createOne(
+        { ...data, date: ymd },
+        groupId,
+        { skipMaxAdvance: true, skipWeeklyCap: true },
+        data.reason.trim(),
+      );
+      created.push(booking);
+    } catch (e) {
+      skipped++;
+      if (!firstError) firstError = e instanceof Error ? e.message : 'erro';
+    }
+  }
+
+  if (created.length === 0) {
+    throw new Error(firstError ?? 'Nenhuma data disponível para a recorrência.');
+  }
+
+  return { created, skipped };
 }
 
 export async function cancelBooking(id: string): Promise<void> {
@@ -91,5 +203,11 @@ export async function cancelBooking(id: string): Promise<void> {
     throw new Error('Este agendamento não pode ser cancelado');
   }
 
+  const wasAccepted = booking.status === 'accepted';
   await prisma.booking.update({ where: { id }, data: { status: 'cancelled' } });
+
+  // Liberou um horário confirmado → promove a lista de espera.
+  if (wasAccepted) {
+    await promoteWaitlist(booking.date, booking.time, booking.court);
+  }
 }

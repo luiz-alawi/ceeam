@@ -53,6 +53,7 @@ function Lane({ lane, onBook, onOpenBooking, onSlotClick, readOnly }: { lane: Co
         {lane.slots.map((slot) => {
           const meta = STATUS_META[slot.status];
           const free = slot.status === 'free';
+          const canBook = free && !readOnly && !!onBook;
           const clickable = free ? (!readOnly && !!onBook) || !!onSlotClick
             : (slot.status === 'mine' || slot.status === 'pending') ? !!onOpenBooking || !!onSlotClick
             : !!onSlotClick;
@@ -65,7 +66,7 @@ function Lane({ lane, onBook, onOpenBooking, onSlotClick, readOnly }: { lane: Co
               onClick={() => handle(slot)}
               className={[
                 'group relative w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                free ? 'hover:bg-[var(--brand-tint)]' : weekly ? '' : 'hover:bg-[var(--paper)]',
+                canBook ? 'hover:bg-[var(--brand-tint)]' : weekly ? '' : 'hover:bg-[var(--paper)]',
                 clickable ? 'cursor-pointer' : 'cursor-default',
               ].join(' ')}
               style={weekly ? { background: slot.color.bg } : undefined}
@@ -84,7 +85,7 @@ function Lane({ lane, onBook, onOpenBooking, onSlotClick, readOnly }: { lane: Co
               {/* status / label */}
               <span className="flex-1 min-w-0">
                 {free ? (
-                  <span className="text-[13px] text-[var(--muted)] group-hover:text-[var(--brand-700)] transition-colors">
+                  <span className={`text-[13px] text-[var(--muted)] transition-colors ${canBook ? 'group-hover:text-[var(--brand-700)]' : ''}`}>
                     Horário disponível
                   </span>
                 ) : weekly ? (
@@ -101,7 +102,7 @@ function Lane({ lane, onBook, onOpenBooking, onSlotClick, readOnly }: { lane: Co
               </span>
 
               {/* trailing chip / action */}
-              {free ? (
+              {canBook ? (
                 <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--brand)] opacity-0 group-hover:opacity-100 transition-opacity">
                   <Plus className="w-4 h-4" /> Reservar
                 </span>

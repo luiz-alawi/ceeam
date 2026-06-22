@@ -25,11 +25,19 @@ model Booking {
   court     String
   equipment String[] @default([])
   players   String[] @default([])
+  // pending | accepted | rejected | cancelled | waitlisted
   status    String   @default("pending")
+  // null = ainda não registrado; true = compareceu; false = faltou
+  attended  Boolean?
+  // agrupa ocorrências criadas por um agendamento recorrente
+  recurringGroupId String?
+  // justificativa do pedido (usada nos pedidos recorrentes / horário fixo)
+  reason    String?
   createdAt DateTime @default(now())
 
   @@index([userEmail])
   @@index([status])
+  @@index([date, time, court])
 }
 
 model Message {
@@ -60,4 +68,25 @@ model WeeklyEvent {
   createdAt DateTime @default(now())
 
   @@index([dayOfWeek])
+}
+
+// Regras de agendamento configuráveis pelo admin (documento único).
+model Settings {
+  id                String @id @default(auto()) @map("_id") @db.ObjectId
+  maxPerUserPerWeek Int    @default(3)
+  minAdvanceHours   Int    @default(0)
+  maxAdvanceDays    Int    @default(30)
+  waitlistEnabled   Boolean @default(true)
+}
+
+// Trilha de auditoria das ações administrativas.
+model AuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorEmail String
+  action     String
+  target     String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

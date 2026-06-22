@@ -1,3 +1,10 @@
+export type BookingStatus =
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'cancelled'
+  | 'waitlisted';
+
 export interface Booking {
   id: string;
   date: string;
@@ -5,7 +12,10 @@ export interface Booking {
   court: string;
   equipment: string[];
   players: string[];
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  status: BookingStatus;
+  attended?: boolean | null;
+  recurringGroupId?: string | null;
+  reason?: string | null;
 }
 
 export interface Request {
@@ -17,8 +27,37 @@ export interface Request {
   court: string;
   equipment: string[];
   players: string[];
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  status: BookingStatus;
   requestDate: string;
+  attended?: boolean | null;
+  recurringGroupId?: string | null;
+  reason?: string | null;
+}
+
+export interface BookingSettings {
+  maxPerUserPerWeek: number;
+  minAdvanceHours: number;
+  maxAdvanceDays: number;
+  waitlistEnabled: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  createdAt: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  actorEmail: string;
+  actorName: string | null;
+  action: string;
+  target: string | null;
+  targetName: string | null; // nome do usuário afetado, quando o alvo é um e-mail
+  details: string | null;
+  createdAt: string;
 }
 
 export interface Message {

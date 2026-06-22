@@ -3,14 +3,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { Loader2, MessageCircle, Plus, CalendarCheck2, CheckCircle2, Hourglass, XCircle } from 'lucide-react';
+import { Loader2, MessageCircle, Plus, CalendarCheck2, CheckCircle2, Hourglass, XCircle, ListOrdered, Repeat } from 'lucide-react';
 import TopAppBar from '@/components/agenda/TopAppBar';
 import DayRail from '@/components/agenda/DayRail';
 import CourtBoard from '@/components/agenda/CourtBoard';
 import BookingModal from '@/components/BookingModal';
+import RecurringModal from '@/components/RecurringModal';
 import BookingDetailModal from '@/components/BookingDetailModal';
 import ChatModal from '@/components/ChatModal';
-import { getBookings, createBooking, cancelBooking } from '@/actions/bookings';
+import { getBookings, createBooking, createRecurringBooking, cancelBooking } from '@/actions/bookings';
 import { getCalendarData } from '@/actions/calendar';
 import { buildBoard, toYMD, courtColor } from '@/lib/calendar';
 import { COURTS, TIME_SLOTS } from '@/data/mockData';
@@ -20,13 +21,14 @@ import type { Booking, CalendarEntry, GymClosure, WeeklyEvent } from '@/types';
 const STATUS_CHIP: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
   accepted: { label: 'Confirmado', icon: <CheckCircle2 className="w-3.5 h-3.5" />, cls: 'bg-[#e7f6ec] text-[#1f7a44]' },
   pending:  { label: 'Pendente',   icon: <Hourglass className="w-3.5 h-3.5" />,    cls: 'bg-[#fdf2e3] text-[#b45309]' },
+  waitlisted:{ label: 'Lista de espera', icon: <ListOrdered className="w-3.5 h-3.5" />, cls: 'bg-[#ede9fe] text-[#6d28d9]' },
   rejected: { label: 'Recusado',   icon: <XCircle className="w-3.5 h-3.5" />,      cls: 'bg-[#fdecec] text-[#b91c1c]' },
   cancelled:{ label: 'Cancelado',  icon: <XCircle className="w-3.5 h-3.5" />,      cls: 'bg-[#eef2f7] text-[#5b6b80]' },
 };
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, currentUser, logout } = useAuth();
+  const { isAuthenticated, currentUser, currentName, logout } = useAuth();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [busy, setBusy] = useState<CalendarEntry[]>([]);
@@ -38,9 +40,24 @@ export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [rangeStart, setRangeStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
 
+  // Relógio que avança ao longo do dia, para ocultar horários já passados.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const [bookingPrefill, setBookingPrefill] = useState<{ date?: string; time?: string; court?: string } | null>(null);
+  const [showRecurring, setShowRecurring] = useState(false);
   const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     if (!isAuthenticated) { router.replace('/login'); }
@@ -61,8 +78,8 @@ export default function DashboardPage() {
   }, [currentUser]);
 
   const board = useMemo(
-    () => buildBoard({ date: selectedDate, slots: TIME_SLOTS, courts: COURTS, ownBookings: bookings, busy, weeklyEvents, closures }),
-    [selectedDate, bookings, busy, weeklyEvents, closures],
+    () => buildBoard({ date: selectedDate, slots: TIME_SLOTS, courts: COURTS, ownBookings: bookings, busy, weeklyEvents, closures, now }),
+    [selectedDate, bookings, busy, weeklyEvents, closures, now],
   );
 
   const closedDays = useMemo(() => new Set(closures.map((c) => c.date)), [closures]);
@@ -81,10 +98,30 @@ export default function DashboardPage() {
 
   if (!isAuthenticated) return null;
 
-  const handleNewBooking = async (data: { date: string; time: string; court: string; equipment: string[]; players: string[] }) => {
-    const booking = await createBooking({ ...data, userEmail: currentUser, userName: currentUser });
+  const handleNewBooking = async (data: { date: string; time: string; court: string; equipment: string[]; players: string[]; playerCount: number }) => {
+    const booking = await createBooking({ ...data, userEmail: currentUser, userName: currentName || currentUser });
     setBookings((prev) => [booking, ...prev]);
     setBookingPrefill(null);
+    setToast(
+      booking.status === 'waitlisted'
+        ? 'Horário ocupado — você entrou na lista de espera e será avisado se vagar.'
+        : 'Solicitação enviada! Aguarde a confirmação.',
+    );
+  };
+
+  const handleRecurringBooking = async (data: { date: string; time: string; court: string; weeks: number; reason: string }) => {
+    const { weeks, ...rest } = data;
+    const { created, skipped } = await createRecurringBooking(
+      { ...rest, equipment: [], players: [], userEmail: currentUser, userName: currentName || currentUser },
+      weeks,
+    );
+    setBookings((prev) => [...created, ...prev]);
+    setShowRecurring(false);
+    const waitlisted = created.filter((b) => b.status === 'waitlisted').length;
+    let msg = `Pedido de horário fixo enviado: ${created.length} data(s) solicitada(s).`;
+    if (waitlisted > 0) msg += ` ${waitlisted} em lista de espera.`;
+    if (skipped > 0) msg += ` ${skipped} data(s) indisponível(is) foram puladas.`;
+    setToast(msg);
   };
 
   const handleCancelBooking = async (id: string) => {
@@ -97,7 +134,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TopAppBar title="Agenda das Quadras" userEmail={currentUser} onLogout={logout} />
+      <TopAppBar title="Agenda das Quadras" userName={currentName} userEmail={currentUser} onLogout={logout} />
 
       {/* ── Hero band ── */}
       <div className="bg-[var(--ink)] court-lines text-white px-4 sm:px-6 pt-5 pb-4">
@@ -117,6 +154,13 @@ export default function DashboardPage() {
                 className="px-4 py-2 rounded-xl text-[13px] font-semibold bg-white/10 hover:bg-white/20 border border-white/10 transition-colors"
               >
                 Hoje
+              </button>
+              <button
+                onClick={() => setShowRecurring(true)}
+                className="px-4 py-2 rounded-xl text-[13px] font-semibold bg-white/10 hover:bg-white/20 border border-white/10 flex items-center gap-1.5 transition-colors"
+                title="Reservar o mesmo horário toda semana (requer justificativa)"
+              >
+                <Repeat className="w-4 h-4" /> Horário fixo
               </button>
               <button
                 onClick={() => setBookingPrefill({})}
@@ -236,12 +280,30 @@ export default function DashboardPage() {
         />
       )}
 
+      {showRecurring && (
+        <RecurringModal
+          onClose={() => setShowRecurring(false)}
+          onSubmit={handleRecurringBooking}
+          weeklyEvents={weeklyEvents}
+        />
+      )}
+
       {detailBooking && (
         <BookingDetailModal
           booking={detailBooking}
           onClose={() => setDetailBooking(null)}
           onCancel={() => { handleCancelBooking(detailBooking.id); setDetailBooking(null); }}
         />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] anim-pop">
+          <div className="bg-[var(--ink)] text-white rounded-2xl px-4 py-3 text-[13px] shadow-[0_10px_30px_rgba(10,22,38,.35)] flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-[var(--brand-300)]" />
+            <span className="flex-1">{toast}</span>
+            <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100"><XCircle className="w-4 h-4" /></button>
+          </div>
+        </div>
       )}
 
       {!showChat && (

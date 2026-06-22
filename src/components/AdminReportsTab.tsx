@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarDays, TrendingUp, Clock, Users, Package, BarChart2 } from 'lucide-react';
+import { CalendarDays, TrendingUp, Clock, Users, Package, BarChart2, Printer, UserX } from 'lucide-react';
 import { formatDatePtBR } from '@/utils/dateUtils';
 import type { ReportData } from '@/actions/reports';
 
@@ -29,13 +29,21 @@ export default function AdminReportsTab({ data }: { data: ReportData }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
-        <CalendarDays className="w-3.5 h-3.5" />
-        Período analisado:{' '}
-        <strong className="text-[var(--ink)] font-medium">
-          {formatDatePtBR(data.period.from, { day: '2-digit', month: 'long' })} —{' '}
-          {formatDatePtBR(data.period.to, { day: '2-digit', month: 'long', year: 'numeric' })}
-        </strong>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
+          <CalendarDays className="w-3.5 h-3.5" />
+          Período analisado:{' '}
+          <strong className="text-[var(--ink)] font-medium">
+            {formatDatePtBR(data.period.from, { day: '2-digit', month: 'long' })} —{' '}
+            {formatDatePtBR(data.period.to, { day: '2-digit', month: 'long', year: 'numeric' })}
+          </strong>
+        </div>
+        <div className="flex items-center gap-2 print:hidden">
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--brand)] text-white rounded-lg text-[12px] font-medium hover:bg-[var(--brand-700)] transition-colors">
+            <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
+          </button>
+        </div>
       </div>
 
       {noData && (
@@ -86,6 +94,27 @@ export default function AdminReportsTab({ data }: { data: ReportData }) {
               <span key={s.label} className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full" style={{ background: s.c }} /> {s.label} ({s.count})
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(data.attended + data.absent > 0 || data.waitlisted > 0) && (
+        <div className={card}>
+          <h3 className="text-[14px] font-medium text-[var(--ink)] mb-3 flex items-center gap-2">
+            <UserX className="w-4 h-4 text-[var(--brand)]" /> Presença & lista de espera
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Presenças', value: data.attended, tx: '#1f7a44' },
+              { label: 'Faltas', value: data.absent, tx: '#dc2626' },
+              { label: 'Taxa de falta', value: `${data.noShowRate}%`, tx: '#b45309' },
+              { label: 'Em espera', value: data.waitlisted, tx: '#6d28d9' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-[var(--line)] p-3 text-center">
+                <div className="text-[22px] font-bold" style={{ color: s.tx }}>{s.value}</div>
+                <div className="text-[11px] mt-0.5 text-[var(--muted)]">{s.label}</div>
+              </div>
             ))}
           </div>
         </div>

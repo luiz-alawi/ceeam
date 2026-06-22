@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Space_Grotesk, Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider, AuthUser } from '@/lib/auth-context';
 import { getSession } from '@/lib/session';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 const display = Space_Grotesk({
   subsets: ['latin'],
@@ -21,6 +22,20 @@ const body = Inter({
 export const metadata: Metadata = {
   title: 'CEEAM · Agenda das Quadras',
   description: 'Centro Esportivo Educacional da Antônio Meneghetti Faculdade',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'CEEAM',
+  },
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0e1726',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -33,6 +48,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="pt-BR" className={`${display.variable} ${body.variable}`}>
       <body>
+        <ServiceWorkerRegister />
         <AuthProvider initialSession={initialSession}>{children}</AuthProvider>
       </body>
     </html>

@@ -11,6 +11,10 @@ export interface ReportData {
   cancelled: number;
   pending: number;
   acceptanceRate: number;
+  waitlisted: number;
+  attended: number;
+  absent: number;
+  noShowRate: number;
   byCourt: { court: string; count: number }[];
   topTimeSlots: { time: string; count: number }[];
   byDayOfWeek: { day: number; count: number }[];
@@ -36,6 +40,12 @@ export async function getReportData(): Promise<ReportData> {
   const rejected  = bookings.filter((b) => b.status === 'rejected').length;
   const cancelled = bookings.filter((b) => b.status === 'cancelled').length;
   const pending   = bookings.filter((b) => b.status === 'pending').length;
+  const waitlisted = bookings.filter((b) => b.status === 'waitlisted').length;
+
+  // Presença (apenas entre os agendamentos aceitos com presença registrada)
+  const attended = bookings.filter((b) => b.attended === true).length;
+  const absent   = bookings.filter((b) => b.attended === false).length;
+  const noShowRate = attended + absent > 0 ? Math.round((absent / (attended + absent)) * 100) : 0;
 
   // Por quadra
   const courtMap = new Map<string, number>();
@@ -82,6 +92,7 @@ export async function getReportData(): Promise<ReportData> {
     period: { from: fromDate, to: toDate },
     total, accepted, rejected, cancelled, pending,
     acceptanceRate: total > 0 ? Math.round((accepted / total) * 100) : 0,
+    waitlisted, attended, absent, noShowRate,
     byCourt, topTimeSlots, byDayOfWeek, topUsers, byEquipment,
   };
 }

@@ -68,6 +68,33 @@ export function slotStart(slot: string): string {
   return slot.split('-')[0].trim();
 }
 
+/**
+ * Hora a partir da qual um slot é considerado "de madrugada" e, portanto,
+ * pertencente ao dia seguinte na grade (ex.: `00:00 - 00:45` vem depois de
+ * `23:00 - 00:00`). A grade abre às 09:00, então nenhum slot legítimo começa
+ * antes desse limite no mesmo dia.
+ */
+const OVERNIGHT_CUTOFF_HOUR = 8;
+
+/**
+ * Indica se o horário (slot) já passou em relação a `now`. Dias anteriores a hoje
+ * contam como totalmente passados; dias futuros nunca; no dia de hoje compara o
+ * início do slot com o horário atual.
+ *
+ * Slots de madrugada (ex.: `00:00 - 00:45`) aparecem na grade do dia mas ocorrem
+ * de fato na madrugada seguinte, então são comparados com a meia-noite do dia +1.
+ */
+export function slotHasPassed(ymd: string, time: string, now: Date): boolean {
+  const [h, m] = slotStart(time).split(':').map(Number);
+  const isOvernight = h < OVERNIGHT_CUTOFF_HOUR;
+
+  const start = new Date(`${ymd}T00:00:00`);
+  if (isOvernight) start.setDate(start.getDate() + 1);
+  start.setHours(h, m, 0, 0);
+
+  return start.getTime() <= now.getTime();
+}
+
 /* ── Colour palettes (Google Calendar inspired) ─────────────── */
 
 export interface EventColor {
@@ -238,17 +265,21 @@ export function buildBoard(opts: {
   busy: CalendarEntry[];
   weeklyEvents: WeeklyEvent[];
   closures: GymClosure[];
+  /** Quando informado, horários já passados (no dia de hoje) são ocultados. */
+  now?: Date;
 }): DayBoard {
-  const { date, slots, courts, ownBookings, busy, weeklyEvents, closures } = opts;
+  const { date, slots, courts, ownBookings, busy, weeklyEvents, closures, now } = opts;
   const ymd = toYMD(date);
   const dow = date.getDay();
 
   const closure = closures.find((c) => c.date === ymd);
   if (closure) return { closed: true, closureReason: closure.reason, lanes: [] };
 
+  const visibleSlots = now ? slots.filter((time) => !slotHasPassed(ymd, time, now)) : slots;
+
   const lanes: CourtLane[] = courts.map((court) => {
     const color = courtColor(court, courts);
-    const laneSlots: BoardSlot[] = slots.map((time) => {
+    const laneSlots: BoardSlot[] = visibleSlots.map((time) => {
       const mine = ownBookings.find(
         (b) => b.date === ymd && b.court === court && b.time === time &&
           (b.status === 'accepted' || b.status === 'pending'),

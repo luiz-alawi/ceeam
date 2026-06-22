@@ -2,7 +2,7 @@
 
 import {
   X, Calendar, Clock, Users, Package, CheckCircle, XCircle, AlertCircle,
-  Trash2, MessageSquare, User, Mail, CalendarDays, RotateCcw, Repeat, MessageSquareText,
+  Trash2, MessageSquare, User, Mail, CalendarDays, RotateCcw, Repeat, MessageSquareText, History,
 } from 'lucide-react';
 import { formatDatePtBR, formatDateTimePtBR } from '@/utils/dateUtils';
 
@@ -30,6 +30,7 @@ interface BookingDetailModalProps {
   onAdminCancel?: () => void;
   onRestore?: () => void;
   onChat?: () => void;
+  onHistory?: () => void;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; chip: string; bar: string }> = {
@@ -41,7 +42,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; chip
 };
 
 export default function BookingDetailModal({
-  booking, onClose, onCancel, onAccept, onReject, onAdminCancel, onRestore, onChat,
+  booking, onClose, onCancel, onAccept, onReject, onAdminCancel, onRestore, onChat, onHistory,
 }: BookingDetailModalProps) {
   const cfg = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending;
   const isAdmin = !!(booking.userName || onAccept || onReject || onAdminCancel || onRestore || onChat);
@@ -146,6 +147,9 @@ export default function BookingDetailModal({
             )}
             {onCancel && (booking.status === 'pending' || booking.status === 'accepted' || booking.status === 'waitlisted') && (
               <button onClick={onCancel} className={`${btn()}bg-[#dc2626] hover:bg-[#b91c1c]`}><Trash2 className="w-4 h-4" /> {booking.status === 'waitlisted' ? 'Sair da lista de espera' : 'Cancelar agendamento'}</button>
+            )}
+            {onHistory && (
+              <button onClick={onHistory} className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-[var(--line)] text-[var(--ink)] rounded-xl text-[14px] font-semibold hover:bg-[var(--paper)] transition-colors"><History className="w-4 h-4" /> Ver histórico do usuário</button>
             )}
             <button onClick={onClose} className="w-full py-2.5 text-[14px] font-semibold text-[var(--muted)] rounded-xl hover:bg-[var(--paper)] transition-colors">Fechar</button>
           </div>

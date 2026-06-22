@@ -47,37 +47,110 @@ export async function getRequests(): Promise<Request[]> {
 const ALLOWED_STATUSES = ['accepted', 'rejected', 'cancelled'] as const;
 type AllowedStatus = (typeof ALLOWED_STATUSES)[number];
 
-export async function updateRequestStatus(id: string, status: AllowedStatus): Promise<Request> {
-  const actor = await requireAdmin();
+/** Dados do agendamento que já ocupa o horário (para o modal de substituição). */
+export interface SlotConflict {
+  id: string;
+  userName: string;
+  date: string;
+  time: string;
+  court: string;
+}
 
-  const target = await prisma.booking.findUnique({ where: { id } });
-  if (!target) throw new Error('Agendamento não encontrado');
+/**
+ * Resultado das ações de status. Erros de validação são RETORNADOS (não
+ * lançados): o Next.js mascara mensagens de exceções de Server Actions em
+ * produção, então retornar preserva a mensagem amigável para o admin.
+ * Quando o conflito é um horário já ocupado, `conflict` traz quem o ocupa,
+ * permitindo oferecer a substituição.
+ */
+export type StatusResult =
+  | { ok: true }
+  | { ok: false; error: string; conflict?: SlotConflict };
 
-  if (status === 'accepted') {
-    const conflict = await prisma.booking.findFirst({
+export async function updateRequestStatus(id: string, status: AllowedStatus): Promise<StatusResult> {
+  try {
+    const actor = await requireAdmin();
+
+    const target = await prisma.booking.findUnique({ where: { id } });
+    if (!target) return { ok: false, error: 'Agendamento não encontrado' };
+
+    if (status === 'accepted') {
+      const conflict = await prisma.booking.findFirst({
+        where: { date: target.date, time: target.time, court: target.court, status: 'accepted', NOT: { id } },
+      });
+      if (conflict) {
+        return {
+          ok: false,
+          error: 'Já existe um agendamento aceito neste horário e quadra.',
+          conflict: {
+            id: conflict.id,
+            userName: conflict.userName,
+            date: conflict.date,
+            time: conflict.time,
+            court: conflict.court,
+          },
+        };
+      }
+    }
+
+    await prisma.booking.update({ where: { id }, data: { status } });
+
+    await logAudit(
+      actor,
+      `booking:${status}`,
+      target.userEmail,
+      `${target.court} · ${target.date} ${target.time}`,
+    );
+
+    // Liberou um horário confirmado → promove a lista de espera.
+    if (target.status === 'accepted' && (status === 'rejected' || status === 'cancelled')) {
+      await promoteWaitlist(target.date, target.time, target.court);
+    }
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Erro ao atualizar status' };
+  }
+}
+
+/**
+ * Aceita um pedido SUBSTITUINDO o agendamento que já ocupa o horário/quadra:
+ * cancela o aceito atual e aceita este. Usado após o admin confirmar a troca.
+ */
+export async function acceptRequestOverride(id: string): Promise<StatusResult> {
+  try {
+    const actor = await requireAdmin();
+
+    const target = await prisma.booking.findUnique({ where: { id } });
+    if (!target) return { ok: false, error: 'Agendamento não encontrado' };
+
+    // Cancela o agendamento que ocupa o mesmo horário/quadra (sem promover a
+    // lista de espera — a vaga vai direto para este pedido).
+    const current = await prisma.booking.findFirst({
       where: { date: target.date, time: target.time, court: target.court, status: 'accepted', NOT: { id } },
     });
-    if (conflict) throw new Error('Já existe um agendamento aceito neste horário e quadra.');
+    if (current) {
+      await prisma.booking.update({ where: { id: current.id }, data: { status: 'cancelled' } });
+      await logAudit(
+        actor,
+        'booking:cancelled',
+        current.userEmail,
+        `${current.court} · ${current.date} ${current.time} (substituído por outro pedido)`,
+      );
+    }
+
+    await prisma.booking.update({ where: { id }, data: { status: 'accepted' } });
+    await logAudit(
+      actor,
+      'booking:accepted',
+      target.userEmail,
+      `${target.court} · ${target.date} ${target.time} (substituiu agendamento anterior)`,
+    );
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Erro ao substituir agendamento' };
   }
-
-  const row = await prisma.booking.update({
-    where: { id },
-    data: { status },
-  });
-
-  await logAudit(
-    actor,
-    `booking:${status}`,
-    target.userEmail,
-    `${target.court} · ${target.date} ${target.time}`,
-  );
-
-  // Liberou um horário confirmado → promove a lista de espera.
-  if (target.status === 'accepted' && (status === 'rejected' || status === 'cancelled')) {
-    await promoteWaitlist(target.date, target.time, target.court);
-  }
-
-  return toRequest(row);
 }
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
@@ -90,63 +163,70 @@ const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'q
 export async function updateRecurringGroupStatus(
   groupId: string,
   status: 'accepted' | 'rejected',
-): Promise<Request[]> {
-  const actor = await requireAdmin();
+): Promise<StatusResult> {
+  try {
+    const actor = await requireAdmin();
 
-  const items = await prisma.booking.findMany({
-    where: { recurringGroupId: groupId, status: { in: ['pending', 'waitlisted'] } },
-    orderBy: { date: 'asc' },
-  });
-  if (items.length === 0) throw new Error('Pedido recorrente não encontrado');
+    const items = await prisma.booking.findMany({
+      where: { recurringGroupId: groupId, status: { in: ['pending', 'waitlisted'] } },
+      orderBy: { date: 'asc' },
+    });
+    if (items.length === 0) return { ok: false, error: 'Pedido recorrente não encontrado' };
 
-  const changed: typeof items = [];
-  for (const it of items) {
-    if (status === 'accepted') {
-      const conflict = await prisma.booking.findFirst({
-        where: { date: it.date, time: it.time, court: it.court, status: 'accepted', NOT: { id: it.id } },
-      });
-      if (conflict) continue; // pula datas já reservadas por outro pedido
+    const changed: typeof items = [];
+    for (const it of items) {
+      if (status === 'accepted') {
+        const conflict = await prisma.booking.findFirst({
+          where: { date: it.date, time: it.time, court: it.court, status: 'accepted', NOT: { id: it.id } },
+        });
+        if (conflict) continue; // pula datas já reservadas por outro pedido
+      }
+      await prisma.booking.update({ where: { id: it.id }, data: { status } });
+      changed.push(it);
     }
-    await prisma.booking.update({ where: { id: it.id }, data: { status } });
-    changed.push(it);
+
+    const sample = items[0];
+    const weekday = WEEKDAYS[new Date(sample.date + 'T12:00:00').getDay()];
+    const fmt = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    const skipped = items.length - changed.length;
+    const dates = changed.map((c) => fmt(c.date)).join(', ');
+    const detail =
+      `Toda ${weekday} · ${sample.court} · ${sample.time} · ` +
+      `ocupa ${changed.length} data(s)${dates ? `: ${dates}` : ''}` +
+      (skipped > 0 ? ` (${skipped} pulada(s) por conflito)` : '');
+
+    await logAudit(
+      actor,
+      status === 'accepted' ? 'recurring:accepted' : 'recurring:rejected',
+      sample.userEmail,
+      detail,
+    );
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Erro ao atualizar pedido' };
   }
-
-  const sample = items[0];
-  const weekday = WEEKDAYS[new Date(sample.date + 'T12:00:00').getDay()];
-  const fmt = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
-  const skipped = items.length - changed.length;
-  const dates = changed.map((c) => fmt(c.date)).join(', ');
-  const detail =
-    `Toda ${weekday} · ${sample.court} · ${sample.time} · ` +
-    `ocupa ${changed.length} data(s)${dates ? `: ${dates}` : ''}` +
-    (skipped > 0 ? ` (${skipped} pulada(s) por conflito)` : '');
-
-  await logAudit(
-    actor,
-    status === 'accepted' ? 'recurring:accepted' : 'recurring:rejected',
-    sample.userEmail,
-    detail,
-  );
-
-  const updated = await prisma.booking.findMany({ where: { recurringGroupId: groupId } });
-  return updated.map(toRequest);
 }
 
 /** Registra a presença (ou falta) em um agendamento confirmado. */
-export async function setAttendance(id: string, attended: boolean | null): Promise<Request> {
-  const actor = await requireAdmin();
+export async function setAttendance(id: string, attended: boolean | null): Promise<StatusResult> {
+  try {
+    const actor = await requireAdmin();
 
-  const target = await prisma.booking.findUnique({ where: { id } });
-  if (!target) throw new Error('Agendamento não encontrado');
+    const target = await prisma.booking.findUnique({ where: { id } });
+    if (!target) return { ok: false, error: 'Agendamento não encontrado' };
 
-  const row = await prisma.booking.update({ where: { id }, data: { attended } });
+    await prisma.booking.update({ where: { id }, data: { attended } });
 
-  await logAudit(
-    actor,
-    attended === null ? 'attendance:clear' : attended ? 'attendance:present' : 'attendance:absent',
-    target.userEmail,
-    `${target.court} · ${target.date} ${target.time}`,
-  );
+    await logAudit(
+      actor,
+      attended === null ? 'attendance:clear' : attended ? 'attendance:present' : 'attendance:absent',
+      target.userEmail,
+      `${target.court} · ${target.date} ${target.time}`,
+    );
 
-  return toRequest(row);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Erro ao registrar presença' };
+  }
 }

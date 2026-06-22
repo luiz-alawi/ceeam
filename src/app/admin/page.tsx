@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   CheckCircle, XCircle, MessageSquare, Calendar, Clock, User,
-  Trash2, Loader2, CalendarOff, Plus, X, Repeat, ListOrdered, UserCheck, UserX, MessageSquareText, Search,
+  Trash2, Loader2, CalendarOff, Plus, X, Repeat, ListOrdered, UserCheck, UserX, MessageSquareText, Search, AlertTriangle,
 } from 'lucide-react';
 import TopAppBar from '@/components/agenda/TopAppBar';
 import ChatModal from '@/components/ChatModal';
@@ -15,7 +15,9 @@ import AdminUsersTab from '@/components/AdminUsersTab';
 import AdminAuditTab from '@/components/AdminAuditTab';
 import AdminSettingsTab from '@/components/AdminSettingsTab';
 import BookingDetailModal from '@/components/BookingDetailModal';
-import { getRequests, updateRequestStatus, updateRecurringGroupStatus, setAttendance } from '@/actions/requests';
+import UserHistoryModal from '@/components/UserHistoryModal';
+import { getRequests, updateRequestStatus, updateRecurringGroupStatus, setAttendance, acceptRequestOverride } from '@/actions/requests';
+import type { SlotConflict } from '@/actions/requests';
 import { getCalendarData } from '@/actions/calendar';
 import { createClosure, deleteClosure } from '@/actions/closures';
 import { createWeeklyEvent, deleteWeeklyEvent } from '@/actions/weeklyEvents';
@@ -137,7 +139,11 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chatUser, setChatUser] = useState<{ name: string; email: string } | null>(null);
+  const [historyUser, setHistoryUser] = useState<{ name: string; email: string } | null>(null);
   const [detailRequest, setDetailRequest] = useState<Request | null>(null);
+  // Pedido aguardando confirmação de substituição (horário já ocupado).
+  const [overwrite, setOverwrite] = useState<{ id: string; current: SlotConflict } | null>(null);
+  const [overwriting, setOverwriting] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loadingReports, setLoadingReports] = useState(false);
 
@@ -187,22 +193,36 @@ export default function AdminPage() {
   const updateStatus = async (id: string, status: 'accepted' | 'rejected' | 'cancelled') => {
     const prev = requests.find((r) => r.id === id);
     setRequests((list) => list.map((r) => (r.id === id ? { ...r, status } : r)));
-    try {
-      await updateRequestStatus(id, status);
-    } catch (err) {
+    const res = await updateRequestStatus(id, status);
+    if (!res.ok) {
       if (prev) setRequests((list) => list.map((r) => (r.id === id ? { ...r, status: prev.status } : r)));
-      alert(err instanceof Error ? err.message : 'Erro ao atualizar status');
+      // Horário já ocupado: oferece substituir em vez de só barrar.
+      if (status === 'accepted' && res.conflict) {
+        setOverwrite({ id, current: res.conflict });
+      } else {
+        alert(res.error);
+      }
     }
+  };
+
+  // Confirma a substituição: cancela o agendamento atual e aceita este pedido.
+  const confirmOverwrite = async () => {
+    if (!overwrite) return;
+    setOverwriting(true);
+    const res = await acceptRequestOverride(overwrite.id);
+    setOverwriting(false);
+    setOverwrite(null);
+    if (!res.ok) alert(res.error);
+    getRequests().then(setRequests).catch(() => {});
   };
 
   const handleAttendance = async (id: string, attended: boolean | null) => {
     const prev = requests.find((r) => r.id === id);
     setRequests((list) => list.map((r) => (r.id === id ? { ...r, attended } : r)));
-    try {
-      await setAttendance(id, attended);
-    } catch (err) {
+    const res = await setAttendance(id, attended);
+    if (!res.ok) {
       if (prev) setRequests((list) => list.map((r) => (r.id === id ? { ...r, attended: prev.attended } : r)));
-      alert(err instanceof Error ? err.message : 'Erro ao registrar presença');
+      alert(res.error);
     }
   };
 
@@ -277,11 +297,8 @@ export default function AdminPage() {
   const handleGroupStatus = async (groupId: string, items: Request[], status: 'accepted' | 'rejected') => {
     const ids = new Set(items.map((i) => i.id));
     setRequests((list) => list.map((r) => (ids.has(r.id) ? { ...r, status } : r)));
-    try {
-      await updateRecurringGroupStatus(groupId, status);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao atualizar pedido');
-    }
+    const res = await updateRecurringGroupStatus(groupId, status);
+    if (!res.ok) alert(res.error);
     // Ressincroniza (datas com conflito podem ter sido puladas).
     getRequests().then(setRequests).catch(() => {});
   };
@@ -691,7 +708,45 @@ export default function AdminPage() {
           onRestore={() => { updateStatus(detailRequest.id, 'accepted'); setDetailRequest(null); }}
           onAdminCancel={() => { updateStatus(detailRequest.id, 'cancelled'); setDetailRequest(null); }}
           onChat={() => { setChatUser({ name: detailRequest.userName, email: detailRequest.userEmail }); setDetailRequest(null); }}
+          onHistory={() => setHistoryUser({ name: detailRequest.userName, email: detailRequest.userEmail })}
         />
+      )}
+
+      {historyUser && (
+        <UserHistoryModal user={historyUser} onClose={() => setHistoryUser(null)} />
+      )}
+
+      {overwrite && (
+        <div className="fixed inset-0 bg-[var(--ink)]/55 backdrop-blur-sm flex items-center justify-center p-4 z-[60]" onClick={() => !overwriting && setOverwrite(null)}>
+          <div className="anim-pop bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-2xl bg-[#fdecec] grid place-items-center mb-3">
+              <AlertTriangle className="w-6 h-6 text-[#dc2626]" />
+            </div>
+            <h3 className="font-display text-[18px] font-bold text-[var(--ink)]">Substituir agendamento?</h3>
+            <p className="text-[13px] text-[var(--muted)] mt-1.5 leading-snug">
+              Este horário já está reservado para{' '}
+              <strong className="text-[var(--ink)]">{overwrite.current.userName}</strong>. Se você aceitar
+              este pedido, a reserva atual será <strong className="text-[#dc2626]">cancelada</strong> e
+              substituída por este.
+            </p>
+            <div className="mt-3 bg-[var(--paper)] rounded-xl px-4 py-3 text-[13px] text-[var(--ink)] space-y-1">
+              <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-[var(--muted)]" /> {formatDatePtBR(overwrite.current.date, { weekday: 'short', day: '2-digit', month: 'short' })}</div>
+              <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 text-[var(--muted)]" /> {overwrite.current.time}</div>
+              <div className="flex items-center gap-2"><User className="w-3.5 h-3.5 text-[var(--muted)]" /> {overwrite.current.court}</div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setOverwrite(null)} disabled={overwriting}
+                className="flex-1 py-2.5 border border-[var(--line)] text-[var(--ink)] rounded-xl text-[14px] font-semibold hover:bg-[var(--paper)] transition-colors disabled:opacity-60">
+                Cancelar
+              </button>
+              <button onClick={confirmOverwrite} disabled={overwriting}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-[#dc2626] text-white rounded-xl text-[14px] font-semibold hover:bg-[#b91c1c] transition-colors disabled:opacity-60">
+                {overwriting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Substituir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

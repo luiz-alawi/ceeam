@@ -27,6 +27,32 @@ function slotStart(time: string): string {
   return time.split('-')[0].trim();
 }
 
+// O servidor de produção (Vercel) roda em UTC. Toda a lógica de "hoje" e
+// "horário já passou" precisa ser no fuso de Brasília, senão um usuário
+// agendando à noite recebe "data passada" indevidamente.
+const TZ = 'America/Sao_Paulo';
+
+/** Data de hoje (YYYY-MM-DD) no fuso de Brasília, independente do fuso do servidor. */
+function todayInBrazil(): string {
+  // 'en-CA' formata como YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+}
+
+/**
+ * Instante exato de um horário local de Brasília ("YYYY-MM-DD" + "HH:MM").
+ * O Brasil não adota horário de verão desde 2019 → offset fixo -03:00.
+ */
+function brazilInstant(date: string, hhmm: string): Date {
+  return new Date(`${date}T${hhmm}:00-03:00`);
+}
+
+/** Soma `days` dias a uma data YYYY-MM-DD (aritmética em UTC, livre de fuso). */
+function addDaysYMD(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Início (segunda) e fim (domingo) da semana ISO de uma data YYYY-MM-DD. */
 function weekRange(dateStr: string): { start: string; end: string } {
   const d = new Date(dateStr + 'T12:00:00');
@@ -54,7 +80,7 @@ export async function validateBookingRules(
 ): Promise<string | null> {
   const settings = await getBookingSettings();
   const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const today = todayInBrazil();
 
   if (date < today) {
     return 'Não é possível agendar em uma data passada.';
@@ -62,7 +88,7 @@ export async function validateBookingRules(
 
   // Horário já passado no dia de hoje
   if (date === today) {
-    const start = new Date(`${date}T${slotStart(time)}:00`);
+    const start = brazilInstant(date, slotStart(time));
     if (start.getTime() <= now.getTime()) {
       return 'Este horário já passou.';
     }
@@ -70,7 +96,7 @@ export async function validateBookingRules(
 
   // Antecedência mínima
   if (settings.minAdvanceHours > 0) {
-    const start = new Date(`${date}T${slotStart(time)}:00`);
+    const start = brazilInstant(date, slotStart(time));
     const minMs = settings.minAdvanceHours * 60 * 60 * 1000;
     if (start.getTime() - now.getTime() < minMs) {
       return `É necessário agendar com pelo menos ${settings.minAdvanceHours}h de antecedência.`;
@@ -79,9 +105,7 @@ export async function validateBookingRules(
 
   // Antecedência máxima
   if (!opts.skipMaxAdvance && settings.maxAdvanceDays > 0) {
-    const limit = new Date(now);
-    limit.setDate(limit.getDate() + settings.maxAdvanceDays);
-    const limitYmd = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, '0')}-${String(limit.getDate()).padStart(2, '0')}`;
+    const limitYmd = addDaysYMD(today, settings.maxAdvanceDays);
     if (date > limitYmd) {
       return `Só é possível agendar com até ${settings.maxAdvanceDays} dias de antecedência.`;
     }

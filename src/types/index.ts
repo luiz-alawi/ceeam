@@ -49,6 +49,27 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export interface UserStats {
+  total: number;
+  accepted: number;
+  rejected: number;
+  cancelled: number;
+  pending: number;
+  waitlisted: number;
+  attended: number;
+  absent: number;
+  acceptanceRate: number;
+  noShowRate: number;
+  recent: {
+    id: string;
+    date: string;
+    time: string;
+    court: string;
+    status: BookingStatus;
+    attended: boolean | null;
+  }[];
+}
+
 export interface AuditEntry {
   id: string;
   actorEmail: string;

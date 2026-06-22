@@ -99,7 +99,10 @@ export default function DashboardPage() {
   if (!isAuthenticated) return null;
 
   const handleNewBooking = async (data: { date: string; time: string; court: string; equipment: string[]; players: string[]; playerCount: number }) => {
-    const booking = await createBooking({ ...data, userEmail: currentUser, userName: currentName || currentUser });
+    const res = await createBooking({ ...data, userEmail: currentUser, userName: currentName || currentUser });
+    // Erro de validação: relança para o modal exibir a mensagem inline.
+    if (!res.ok) throw new Error(res.error);
+    const { booking } = res;
     setBookings((prev) => [booking, ...prev]);
     setBookingPrefill(null);
     setToast(
@@ -111,10 +114,12 @@ export default function DashboardPage() {
 
   const handleRecurringBooking = async (data: { date: string; time: string; court: string; weeks: number; reason: string }) => {
     const { weeks, ...rest } = data;
-    const { created, skipped } = await createRecurringBooking(
+    const res = await createRecurringBooking(
       { ...rest, equipment: [], players: [], userEmail: currentUser, userName: currentName || currentUser },
       weeks,
     );
+    if (!res.ok) throw new Error(res.error);
+    const { created, skipped } = res;
     setBookings((prev) => [...created, ...prev]);
     setShowRecurring(false);
     const waitlisted = created.filter((b) => b.status === 'waitlisted').length;

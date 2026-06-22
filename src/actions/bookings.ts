@@ -106,6 +106,15 @@ async function createOne(
   };
 }
 
+/**
+ * Resultado de criação. Erros de validação são RETORNADOS (não lançados):
+ * o Next.js mascara mensagens de exceções de Server Actions em produção,
+ * então retornar preserva a mensagem amigável para o usuário.
+ */
+export type CreateBookingResult =
+  | { ok: true; booking: Booking }
+  | { ok: false; error: string };
+
 export async function createBooking(data: {
   userName: string;
   userEmail: string;
@@ -115,23 +124,28 @@ export async function createBooking(data: {
   equipment: string[];
   players: string[];
   playerCount: number;
-}): Promise<Booking> {
+}): Promise<CreateBookingResult> {
   const session = await getSession();
-  if (!session.isLoggedIn) throw new Error('Não autenticado');
+  if (!session.isLoggedIn) return { ok: false, error: 'Não autenticado' };
 
   if (!Number.isInteger(data.playerCount) || data.playerCount < 1) {
-    throw new Error('Informe quantas pessoas vão jogar.');
+    return { ok: false, error: 'Informe quantas pessoas vão jogar.' };
   }
   const players = data.players.map((p) => p.trim()).filter(Boolean);
   if (new Set(players).size !== players.length) {
-    throw new Error('Há jogadores repetidos na lista.');
+    return { ok: false, error: 'Há jogadores repetidos na lista.' };
   }
   if (players.length !== data.playerCount) {
-    throw new Error(`A lista deve ter exatamente ${data.playerCount} jogador(es).`);
+    return { ok: false, error: `A lista deve ter exatamente ${data.playerCount} jogador(es).` };
   }
 
   const { playerCount: _ignored, ...rest } = data;
-  return createOne({ ...rest, players });
+  try {
+    const booking = await createOne({ ...rest, players });
+    return { ok: true, booking };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Erro ao criar agendamento' };
+  }
 }
 
 /**
@@ -151,12 +165,15 @@ export async function createRecurringBooking(
     reason: string;
   },
   weeks: number,
-): Promise<{ created: Booking[]; skipped: number }> {
+): Promise<
+  | { ok: true; created: Booking[]; skipped: number }
+  | { ok: false; error: string }
+> {
   const session = await getSession();
-  if (!session.isLoggedIn) throw new Error('Não autenticado');
+  if (!session.isLoggedIn) return { ok: false, error: 'Não autenticado' };
 
   if (!data.reason || data.reason.trim().length < 15) {
-    throw new Error('Informe a justificativa do horário fixo (mínimo 15 caracteres).');
+    return { ok: false, error: 'Informe a justificativa do horário fixo (mínimo 15 caracteres).' };
   }
 
   const total = Math.min(Math.max(weeks, 1), 12);
@@ -186,10 +203,10 @@ export async function createRecurringBooking(
   }
 
   if (created.length === 0) {
-    throw new Error(firstError ?? 'Nenhuma data disponível para a recorrência.');
+    return { ok: false, error: firstError ?? 'Nenhuma data disponível para a recorrência.' };
   }
 
-  return { created, skipped };
+  return { ok: true, created, skipped };
 }
 
 export async function cancelBooking(id: string): Promise<void> {

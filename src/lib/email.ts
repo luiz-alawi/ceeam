@@ -10,11 +10,30 @@ const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KE
 
 const FROM = process.env.EMAIL_FROM ?? 'CEAM <onboarding@resend.dev>';
 
-/** URL base da aplicação, usada para montar os links dos e-mails. */
+const isLocalUrl = (url?: string): boolean =>
+  !url || /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(url);
+
+/**
+ * URL base da aplicação, usada para montar os links dos e-mails.
+ *
+ * Cuidado de produção: se `NEXT_PUBLIC_APP_URL` estiver configurada como
+ * localhost (engano comum ao copiar o .env para a Vercel), ela é ignorada em
+ * favor do domínio real do deploy, para os links do e-mail nunca apontarem
+ * para localhost em produção.
+ */
 export function appUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+  const explicit = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
+
+  // Override explícito só vale se não for um endereço local.
+  if (explicit && !isLocalUrl(explicit)) return explicit;
+
+  // Em ambiente Vercel, prefere o domínio de produção (estável) e, na falta,
+  // a URL do deploy atual.
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
+
+  // Desenvolvimento local: usa o override local, se houver, ou o padrão.
+  return explicit ?? 'http://localhost:3000';
 }
 
 // ---------------------------------------------------------------------------

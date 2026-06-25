@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
-import { getSession } from '@/lib/session';
 import { validateEmailFormat } from '@/utils/emailValidation';
+import { createToken } from '@/lib/tokens';
+import { sendVerificationEmail } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -19,16 +20,12 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await bcrypt.hash(body.password, 10);
   const user = await prisma.user.create({
-    data: { name: body.name.trim(), email: normalizedEmail, passwordHash, isAdmin: false },
+    data: { name: body.name.trim(), email: normalizedEmail, passwordHash, isAdmin: false, emailVerified: false },
   });
 
-  const session = await getSession();
-  session.isLoggedIn = true;
-  session.userId = user.id;
-  session.email = user.email;
-  session.name = user.name;
-  session.isAdmin = false;
-  await session.save();
+  // Não cria sessão: é necessário confirmar o e-mail antes de entrar.
+  const token = await createToken(user.email, 'email_verify');
+  await sendVerificationEmail(user.email, user.name, token);
 
-  return NextResponse.json({ name: user.name, email: user.email, isAdmin: false }, { status: 201 });
+  return NextResponse.json({ pendingVerification: true, email: user.email }, { status: 201 });
 }

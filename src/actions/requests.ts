@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/session';
 import { logAudit } from '@/lib/audit';
 import { promoteWaitlist } from '@/lib/booking-rules';
+import { sendBookingStatusEmail } from '@/lib/email';
 import type { Request } from '@/types';
 
 async function requireAdmin(): Promise<string> {
@@ -102,9 +103,28 @@ export async function updateRequestStatus(id: string, status: AllowedStatus): Pr
       `${target.court} · ${target.date} ${target.time}`,
     );
 
-    // Liberou um horário confirmado → promove a lista de espera.
+    // Notifica o usuário sobre a decisão (não bloqueia em caso de falha).
+    await sendBookingStatusEmail(target.userEmail, target.userName, status, {
+      court: target.court,
+      date: target.date,
+      time: target.time,
+    });
+
+    // Liberou um horário confirmado → promove a lista de espera e avisa o promovido.
     if (target.status === 'accepted' && (status === 'rejected' || status === 'cancelled')) {
-      await promoteWaitlist(target.date, target.time, target.court);
+      const promoted = await promoteWaitlist(target.date, target.time, target.court);
+      if (promoted) {
+        const next = await prisma.booking.findFirst({
+          where: { userEmail: promoted, date: target.date, time: target.time, court: target.court, status: 'pending' },
+        });
+        if (next) {
+          await sendBookingStatusEmail(next.userEmail, next.userName, 'promoted', {
+            court: next.court,
+            date: next.date,
+            time: next.time,
+          });
+        }
+      }
     }
 
     return { ok: true };
@@ -137,6 +157,11 @@ export async function acceptRequestOverride(id: string): Promise<StatusResult> {
         current.userEmail,
         `${current.court} · ${current.date} ${current.time} (substituído por outro pedido)`,
       );
+      await sendBookingStatusEmail(current.userEmail, current.userName, 'cancelled', {
+        court: current.court,
+        date: current.date,
+        time: current.time,
+      });
     }
 
     await prisma.booking.update({ where: { id }, data: { status: 'accepted' } });
@@ -146,6 +171,11 @@ export async function acceptRequestOverride(id: string): Promise<StatusResult> {
       target.userEmail,
       `${target.court} · ${target.date} ${target.time} (substituiu agendamento anterior)`,
     );
+    await sendBookingStatusEmail(target.userEmail, target.userName, 'accepted', {
+      court: target.court,
+      date: target.date,
+      time: target.time,
+    });
 
     return { ok: true };
   } catch (e) {
@@ -201,6 +231,17 @@ export async function updateRecurringGroupStatus(
       sample.userEmail,
       detail,
     );
+
+    // Um único e-mail resumindo a decisão do horário fixo. Para "aceito" só
+    // avisa se ao menos uma data foi efetivada.
+    if (status === 'rejected' || changed.length > 0) {
+      const first = changed[0] ?? sample;
+      await sendBookingStatusEmail(sample.userEmail, sample.userName, status, {
+        court: first.court,
+        date: first.date,
+        time: `${first.time} · horário fixo (toda ${weekday})`,
+      });
+    }
 
     return { ok: true };
   } catch (e) {

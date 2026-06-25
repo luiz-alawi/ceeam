@@ -1,7 +1,7 @@
 {
-  "name": "CEEAM · Agenda das Quadras",
+  "name": "CEEAM · Agendamentos Esportivos",
   "short_name": "CEEAM",
-  "description": "Agendamento das quadras do Centro Esportivo Educacional da Antônio Meneghetti Faculdade",
+  "description": "Agendamento das quadras do Centro Esportivo Educacional Antonio Meneghetti da Antônio Meneghetti Faculdade",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

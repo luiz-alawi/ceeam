@@ -20,8 +20,8 @@ const body = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'CEEAM · Agenda das Quadras',
-  description: 'Centro Esportivo Educacional da Antônio Meneghetti Faculdade',
+  title: 'CEEAM · Agendamentos Esportivos',
+  description: 'Centro Esportivo Educacional Antonio Meneghetti da Antônio Meneghetti Faculdade',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,

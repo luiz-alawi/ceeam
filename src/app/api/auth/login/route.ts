@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'E-mail ou senha inválidos' }, { status: 401 });
   }
 
+  if (!user.emailVerified) {
+    return NextResponse.json(
+      { error: 'Confirme seu e-mail antes de entrar.', needsVerification: true },
+      { status: 403 },
+    );
+  }
+
   const session = await getSession();
   session.isLoggedIn = true;
   session.userId = user.id;

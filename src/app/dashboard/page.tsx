@@ -139,7 +139,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TopAppBar title="Agenda das Quadras" userName={currentName} userEmail={currentUser} onLogout={logout} />
+      <TopAppBar title="Agendamentos Esportivos" userName={currentName} userEmail={currentUser} onLogout={logout} />
 
       {/* ── Hero band ── */}
       <div className="bg-[var(--ink)] court-lines text-white px-4 sm:px-6 pt-5 pb-4">

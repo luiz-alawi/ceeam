@@ -26,7 +26,7 @@ export default function AboutPage() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="AMF" className="h-10 w-10 object-contain" />
-            <span className="font-display font-semibold text-[16px] text-[var(--ink)]">Centro Esportivo Educacional</span>
+            <span className="font-display font-semibold text-[16px] text-[var(--ink)]">Centro Esportivo Educacional Antonio Meneghetti</span>
           </div>
           <button onClick={goToApp} className="px-5 py-2 bg-[var(--brand)] text-white rounded-xl text-[14px] font-semibold hover:bg-[var(--brand-700)] transition-colors">
             {isAuthenticated ? 'Ir para a agenda' : 'Entrar'}
@@ -44,7 +44,7 @@ export default function AboutPage() {
             A quadra livre,<br /><span className="text-[var(--brand-300)]">na palma da mão.</span>
           </h1>
           <p className="text-[18px] text-white/65 max-w-2xl mx-auto mb-9">
-            Uma nova forma de agendar as quadras do Centro Esportivo Educacional — rápida,
+            Uma nova forma de agendar as quadras do Centro Esportivo Educacional Antonio Meneghetti — rápida,
             visual e transparente para toda a comunidade acadêmica.
           </p>
           <button onClick={goToApp}

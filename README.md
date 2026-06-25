@@ -1,4 +1,4 @@
-# Agendamentos Esportivos — CEAM
+# Agendamentos Esportivos — CEEAM
 
 Sistema de reserva das quadras do Centro Esportivo Educacional Antônio Meneghetti. O aluno entra, vê a disponibilidade do dia e pede o horário; a administração aprova, recusa ou organiza a fila de espera. Tudo com confirmação por e-mail.
 
